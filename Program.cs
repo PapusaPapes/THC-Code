@@ -15,7 +15,7 @@ namespace PlayerCoder
         }
     }
 
-    // My team: Rogue / Alchemist / Cleric 
+    // My team: Rogue / Alchemist / Cleric
     // Who to silence first: Alchemist > Wizard > Cleric > Fighter > Monk > Rogue
     // Who to poison first:  Monk > Fighter > Rogue > Cleric > Wizard > Alchemist
     // Who to slow first:    Monk > Fighter > Rogue > Wizard > Cleric > Alchemist
@@ -26,11 +26,12 @@ namespace PlayerCoder
     {
         public static string FolderExchangePath = "C:/Users/rmatt/AppData/LocalLow/Ludus Ventus/Team Hero Coder";
 
-        // tracking crafted items 
+        // tracking crafted items
         public static int PotionCount = 0;
         public static int EtherCount = 0;
         public static bool CounterIsActive = false;
         public static bool EnemyHasSilenceRemedy = false;
+        public static bool EnemyHasPoisonRemedy = false;
 
         static readonly HeroJobClass[] SilencePriority = {
             HeroJobClass.Alchemist, HeroJobClass.Wizard, HeroJobClass.Cleric,
@@ -60,7 +61,6 @@ namespace PlayerCoder
 
             SyncPotionCount();
 
-
             if (BossCounterIsActive())
             {
                 bool safeTargetExists = GetBestNonCounterTarget() != null;
@@ -82,7 +82,7 @@ namespace PlayerCoder
                 FallbackAttack(actor);
         }
 
-        // returns true if the enemy is a regular class 
+        // returns true if the enemy is a regular class
         static bool IsStandardClass(Hero hero)
         {
             return hero.jobClass == HeroJobClass.Fighter
@@ -93,7 +93,7 @@ namespace PlayerCoder
                 || hero.jobClass == HeroJobClass.Alchemist;
         }
 
-        // finds the best enemy to hit during counter window 
+        // finds the best enemy to hit during counter window
         static Hero GetBestNonCounterTarget()
         {
             Hero best = null; float bestScore = -999999f;
@@ -104,13 +104,14 @@ namespace PlayerCoder
                             + (1f - GetHealthRatio(foe)) * 150f
                             - foe.physicalDefense * 1.2f;
                 if (HasStatus(foe, StatusEffect.Poison)) score += 50f;
+                if (foe.jobClass == HeroJobClass.Cleric) score += 500f;
                 if (score > bestScore) { bestScore = score; best = foe; }
             }
             return best;
         }
 
         // ROGUE
-        // heal self if low, use ether if out of mana, silence casters, poison everyone, attack
+        // heal self if low, use ether if out of mana, silence casters, poison if no remedies, attack
         static void HandleRogue(Hero actor)
         {
             Console.WriteLine("Rogue branch");
@@ -131,7 +132,7 @@ namespace PlayerCoder
                 return;
             }
 
-            // don't bother silencing if silence remedies, 
+            // don't bother silencing if they have silence remedies
             if (actor.mana >= 15 && !EnemyHasSilenceRemedy)
             {
                 Hero target = GetPriorityFoeTarget(SilencePriority, StatusEffect.Silence, reapplyBelowDuration: 0);
@@ -143,8 +144,9 @@ namespace PlayerCoder
                 }
             }
 
-            // don't poison during counter window
-            if (actor.mana >= 15)
+            // don't poison if they have poison remedies, it's wasted mana
+            // also skip during counter window
+            if (actor.mana >= 15 && !EnemyHasPoisonRemedy)
             {
                 Hero target = GetPriorityFoeTarget(PoisonPriority, StatusEffect.Poison, reapplyBelowDuration: 1);
                 if (target != null && (!CounterIsActive || IsStandardClass(target)))
@@ -155,7 +157,7 @@ namespace PlayerCoder
                 }
             }
 
-            // avoid hitting if counter is up
+            // avoid hitting during counter
             Hero attackTarget = CounterIsActive ? GetBestNonCounterTarget() : GetBestPhysicalTarget();
             if (attackTarget != null)
             {
@@ -225,7 +227,7 @@ namespace PlayerCoder
                 }
             }
 
-            // rogue gets autolife first 
+            // rogue gets autolife first
             if (actor.mana >= 25)
             {
                 Hero target = GetBestAutoLifeTarget();
@@ -311,7 +313,7 @@ namespace PlayerCoder
                 }
             }
 
-            // craft potions when team is hurting and we have essence
+            // craft potions when team is hurting and have essence
             if (actor.mana >= 10 && PotionCount <= 0 && TeamNeedsPotion() && CountEssenceInInventory() >= 2)
             {
                 Console.WriteLine($"Alchemist crafts Potion (Essence: {CountEssenceInInventory()})");
@@ -467,7 +469,8 @@ namespace PlayerCoder
             return best;
         }
 
-        // picks target based on threat + low hp + low defense
+        // pick target based on threat + low hp + low defense
+        // cleric priority since killing cuts off their healing
         static Hero GetBestPhysicalTarget()
         {
             Hero best = null; float bestScore = -999999f;
@@ -478,7 +481,7 @@ namespace PlayerCoder
                             + (1f - GetHealthRatio(foe)) * 150f
                             - foe.physicalDefense * 1.2f;
                 if (HasStatus(foe, StatusEffect.Poison)) score += 50f;
-                if (foe.jobClass == HeroJobClass.Alchemist) score += 500f;
+                if (foe.jobClass == HeroJobClass.Cleric) score += 500f;
                 if (score > bestScore) { bestScore = score; best = foe; }
             }
             return best;
@@ -556,8 +559,8 @@ namespace PlayerCoder
             return false;
         }
 
-       
-        //checks if enemy used silence remedy stop wasting mana on silencestrike
+        
+        // watches for silence/poison remedies to stop wasting mana
         static bool BossCounterIsActive()
         {
             try
@@ -580,9 +583,11 @@ namespace PlayerCoder
                     foreach (Hero foe in TeamHeroCoder.BattleState.foeHeroes)
                         if (ReferenceEquals(foe, actor)) { actorIsFoe = true; break; }
 
-                    // if an enemy uses a silence remedy, stop wasting mana on silencestrike
                     if (actorIsFoe && (abilityName.Contains("SilenceRemedy") || abilityName.Contains("Silence Remedy")))
                         EnemyHasSilenceRemedy = true;
+
+                    if (actorIsFoe && (abilityName.Contains("PoisonRemedy") || abilityName.Contains("Poison Remedy") || abilityName.Contains("FullRemedy") || abilityName.Contains("Full Remedy")))
+                        EnemyHasPoisonRemedy = true;
 
                     if (!actorIsFoe) continue;
 
@@ -640,7 +645,7 @@ namespace PlayerCoder
 
         static void SyncPotionCount()
         {
-        
+            // nothing to sync - counts are tracked manually
         }
 
         static void FallbackAttack(Hero actor)
