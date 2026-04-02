@@ -1,0 +1,52 @@
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/bin/Debug/net6.0/teamherocoderstarterkitcsharp
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/bin/Debug/net6.0/teamherocoderstarterkitcsharp.deps.json
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/bin/Debug/net6.0/teamherocoderstarterkitcsharp.runtimeconfig.json
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/bin/Debug/net6.0/teamherocoderstarterkitcsharp.dll
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/bin/Debug/net6.0/teamherocoderstarterkitcsharp.pdb
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/bin/Debug/net6.0/TeamHeroCoderLibrary.dll
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.csproj.AssemblyReference.cache
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.GeneratedMSBuildEditorConfig.editorconfig
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.AssemblyInfoInputs.cache
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.AssemblyInfo.cs
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.csproj.CoreCompileInputs.cache
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.csproj.CopyComplete
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.dll
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/obj/Debug/net6.0/refint/teamherocoderstarterkitcsharp.dll
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.pdb
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.genruntimeconfig.cache
+/Users/fernandorestituto/Desktop/Final Gambit/teamherocoderstarterkitcsharp/obj/Debug/net6.0/ref/teamherocoderstarterkitcsharp.dll
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/bin/Debug/net6.0/teamherocoderstarterkitcsharp
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/bin/Debug/net6.0/teamherocoderstarterkitcsharp.deps.json
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/bin/Debug/net6.0/teamherocoderstarterkitcsharp.runtimeconfig.json
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/bin/Debug/net6.0/teamherocoderstarterkitcsharp.dll
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/bin/Debug/net6.0/teamherocoderstarterkitcsharp.pdb
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/bin/Debug/net6.0/TeamHeroCoderLibrary.dll
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.csproj.AssemblyReference.cache
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.GeneratedMSBuildEditorConfig.editorconfig
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.AssemblyInfoInputs.cache
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.AssemblyInfo.cs
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.csproj.CoreCompileInputs.cache
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.csproj.CopyComplete
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.dll
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/obj/Debug/net6.0/refint/teamherocoderstarterkitcsharp.dll
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.pdb
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/obj/Debug/net6.0/teamherocoderstarterkitcsharp.genruntimeconfig.cache
+/Users/fernandorestituto/Desktop/Final Gambit/Player Solutions/teamherocoderstarterkitcsharp/obj/Debug/net6.0/ref/teamherocoderstarterkitcsharp.dll
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\bin\Debug\net6.0\teamherocoderstarterkitcsharp.exe
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\bin\Debug\net6.0\teamherocoderstarterkitcsharp.deps.json
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\bin\Debug\net6.0\teamherocoderstarterkitcsharp.runtimeconfig.json
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\bin\Debug\net6.0\teamherocoderstarterkitcsharp.dll
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\bin\Debug\net6.0\teamherocoderstarterkitcsharp.pdb
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\bin\Debug\net6.0\TeamHeroCoderLibrary.dll
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\obj\Debug\net6.0\teamherocoderstarterkitcsharp.csproj.AssemblyReference.cache
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\obj\Debug\net6.0\teamherocoderstarterkitcsharp.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\obj\Debug\net6.0\teamherocoderstarterkitcsharp.AssemblyInfoInputs.cache
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\obj\Debug\net6.0\teamherocoderstarterkitcsharp.AssemblyInfo.cs
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\obj\Debug\net6.0\teamherocoderstarterkitcsharp.csproj.CoreCompileInputs.cache
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\obj\Debug\net6.0\teamhero.00073CD0.Up2Date
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\obj\Debug\net6.0\teamherocoderstarterkitcsharp.dll
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\obj\Debug\net6.0\refint\teamherocoderstarterkitcsharp.dll
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\obj\Debug\net6.0\teamherocoderstarterkitcsharp.pdb
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\obj\Debug\net6.0\teamherocoderstarterkitcsharp.genruntimeconfig.cache
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\obj\Debug\net6.0\ref\teamherocoderstarterkitcsharp.dll
+C:\Users\rmatt\Desktop\teamherocoderstarterkitcsharp-main\teamherocoderstarterkitcsharp-main\obj\Debug\net6.0\teamherocoderstarterkitcsharp.sourcelink.json
