@@ -1,0 +1,316 @@
+using TeamHeroCoderLibrary;
+
+namespace PlayerCoder
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            Console.WriteLine("Connecting...");
+            GameClientConnectionManager connectionManager;
+            connectionManager = new GameClientConnectionManager();
+            connectionManager.SetExchangePath(MyAI.FolderExchangePath);
+            connectionManager.onHeroHasInitiative = MyAI.ProcessAI;
+            connectionManager.StartListeningToGameClientForHeroPlayRequests();
+        }
+    }
+
+    // My team: Wizard / Wizard / Alchemist
+    // vs Alchemist + 2 Rogues with 30 Essence
+    // Wizard 1: Petrify both Rogues to stop item usage entirely
+    // Wizard 2: Doom the Alchemist — burns through their remedies fast
+    // Alchemist: craft Ethers to keep both Wizards casting, Slow Rogues
+    // Kill order: Alchemist first, then Rogues
+
+    public static class MyAI
+    {
+        public static string FolderExchangePath = "C:/Users/rmatt/AppData/LocalLow/Ludus Ventus/Team Hero Coder";
+
+        // starting items: 2 potions, 1 elixir, 1 revive, 2 silence remedies, 2 poison remedies, 9 essence
+        // no starting ethers — alchemist will craft them from essence
+        public static int EtherCount  = 0;
+        public static int PotionCount = 2;
+
+        // thresholds
+        const float LOW_HP_CRITICAL = 0.30f;
+        const float LOW_HP_SERIOUS  = 0.55f;
+        const float LOW_MANA        = 0.30f;
+
+        static public void ProcessAI()
+        {
+            var actor = TeamHeroCoder.BattleState.heroWithInitiative;
+            Console.WriteLine($"Processing AI! Actor: {actor.jobClass} HP:{actor.health}/{actor.maxHealth} MP:{actor.mana}");
+
+            if (actor.jobClass == HeroJobClass.Wizard)
+                HandleWizard(actor);
+            else if (actor.jobClass == HeroJobClass.Alchemist)
+                HandleAlchemist(actor);
+            else
+                Act(actor, Ability.Wait, actor);
+        }
+
+        // WIZARD
+        // petrify rogues to stop item usage > doom alchemist > poison nova > flame strike finisher > magic missile > attack
+        static void HandleWizard(Hero actor)
+        {
+            Console.WriteLine("Wizard branch");
+
+            // use ether if low on mana
+            if (EtherCount > 0)
+            {
+                Hero etherTarget = GetLowestManaAlly(LOW_MANA);
+                if (etherTarget != null)
+                    if (TryUseItem(actor, Ability.Ether, etherTarget, ref EtherCount)) return;
+            }
+
+            // use elixir on self if low on HP or mana — fully restores both
+            if (Utility.AreAbilityAndTargetLegal(Ability.Elixir, actor, false)
+                && (GetHealthRatio(actor) <= LOW_HP_SERIOUS || GetManaRatio(actor) <= LOW_MANA))
+            { Act(actor, Ability.Elixir, actor); return; }
+
+            // use potion on lowest HP ally
+            if (PotionCount > 0)
+            {
+                Hero potionTarget = GetLowestHealthAlly();
+                if (potionTarget != null && GetHealthRatio(potionTarget) <= LOW_HP_CRITICAL)
+                    if (TryUseItem(actor, Ability.Potion, potionTarget, ref PotionCount)) return;
+            }
+
+            // use revive if an ally is dead
+            if (Utility.AreAbilityAndTargetLegal(Ability.Revive, GetBestDeadAlly(), false))
+            {
+                Hero dead = GetBestDeadAlly();
+                if (dead != null) { Act(actor, Ability.Revive, dead); return; }
+            }
+
+            // cleanse silence on self — silenced wizard is useless
+            if (HasStatus(actor, StatusEffect.Silence)
+                && Utility.AreAbilityAndTargetLegal(Ability.SilenceRemedy, actor, false))
+            { Act(actor, Ability.SilenceRemedy, actor); return; }
+
+            // cleanse poison on self
+            if (HasStatus(actor, StatusEffect.Poison)
+                && Utility.AreAbilityAndTargetLegal(Ability.PoisonRemedy, actor, false))
+            { Act(actor, Ability.PoisonRemedy, actor); return; }
+
+            // petrify both rogues — no initiative means no item usage, breaks their sustain loop
+            if (actor.mana >= 15)
+            {
+                foreach (Hero foe in TeamHeroCoder.BattleState.foeHeroes)
+                {
+                    if (foe.health <= 0 || foe.jobClass != HeroJobClass.Rogue) continue;
+                    if (GetStatusDuration(foe, StatusEffect.Petrified) <= 0
+                        && GetStatusDuration(foe, StatusEffect.Petrifying) <= 0
+                        && Utility.AreAbilityAndTargetLegal(Ability.Petrify, foe, false))
+                    { Act(actor, Ability.Petrify, foe); return; }
+                }
+            }
+
+            // doom the alchemist — 3 turn death timer burns through their remedies
+            if (actor.mana >= 15)
+            {
+                foreach (Hero foe in TeamHeroCoder.BattleState.foeHeroes)
+                {
+                    if (foe.health <= 0 || foe.jobClass != HeroJobClass.Alchemist) continue;
+                    if (GetStatusDuration(foe, StatusEffect.Doom) <= 0
+                        && Utility.AreAbilityAndTargetLegal(Ability.Doom, foe, false))
+                    { Act(actor, Ability.Doom, foe); return; }
+                }
+            }
+
+            // flame strike the alchemist to finish it off
+            if (actor.mana >= 30)
+            {
+                Hero alchemist = GetFoeByClass(HeroJobClass.Alchemist);
+                if (alchemist != null && Utility.AreAbilityAndTargetLegal(Ability.FlameStrike, alchemist, false))
+                { Act(actor, Ability.FlameStrike, alchemist); return; }
+            }
+
+            // magic missile as filler damage
+            if (actor.mana >= 10)
+            {
+                Hero target = GetBestLegalAttackTarget();
+                if (target != null && Utility.AreAbilityAndTargetLegal(Ability.MagicMissile, target, false))
+                { Act(actor, Ability.MagicMissile, target); return; }
+            }
+
+            Hero attackTarget = GetBestLegalAttackTarget();
+            if (attackTarget != null) { Act(actor, Ability.Attack, attackTarget); return; }
+
+            Act(actor, Ability.Wait, actor);
+        }
+
+        // ALCHEMIST
+        // craft ether > use ether > slow rogues > attack alchemist > craft potion > use potion > attack
+        static void HandleAlchemist(Hero actor)
+        {
+            Console.WriteLine("Alchemist branch");
+
+            // craft ether to keep wizards casting
+            if (actor.mana >= 10 && EtherCount == 0 && CountEssenceInInventory() >= 2)
+            {
+                Console.WriteLine($"Alchemist crafts Ether (Essence: {CountEssenceInInventory()})");
+                TeamHeroCoder.PerformHeroAbility(Ability.CraftEther, actor);
+                EtherCount++;
+                return;
+            }
+
+            // use ether on whoever is lowest on mana
+            if (EtherCount > 0)
+            {
+                Hero etherTarget = GetLowestManaAlly(0.50f);
+                if (etherTarget != null)
+                    if (TryUseItem(actor, Ability.Ether, etherTarget, ref EtherCount)) return;
+            }
+
+            // slow both rogues to reduce their turns
+            if (actor.mana >= 15)
+            {
+                foreach (Hero foe in TeamHeroCoder.BattleState.foeHeroes)
+                {
+                    if (foe.health <= 0 || foe.jobClass != HeroJobClass.Rogue) continue;
+                    if (GetStatusDuration(foe, StatusEffect.Slow) <= 1
+                        && Utility.AreAbilityAndTargetLegal(Ability.Slow, foe, false))
+                    { Act(actor, Ability.Slow, foe); return; }
+                }
+            }
+
+            // attack the alchemist
+            Hero alchemistCheck = GetBestLegalAttackTarget();
+            if (alchemistCheck != null && alchemistCheck.jobClass == HeroJobClass.Alchemist)
+            { Act(actor, Ability.Attack, alchemistCheck); return; }
+
+            Hero attackTarget = GetBestLegalAttackTarget();
+            if (attackTarget != null) { Act(actor, Ability.Attack, attackTarget); return; }
+
+            Act(actor, Ability.Wait, actor);
+        }
+
+        // ============================================================
+        // HELPERS
+        // ============================================================
+
+        static void Act(Hero actor, Ability ability, Hero target)
+        {
+            Console.WriteLine($"{actor.jobClass} uses {ability} on {target.jobClass}");
+            TeamHeroCoder.PerformHeroAbility(ability, target);
+        }
+
+        static bool TryUseItem(Hero actor, Ability ability, Hero target, ref int itemCount)
+        {
+            Console.WriteLine($"{actor.jobClass} uses {ability} on {target.jobClass}");
+            TeamHeroCoder.PerformHeroAbility(ability, target);
+            itemCount = Math.Max(0, itemCount - 1);
+            return true;
+        }
+
+        // ============================================================
+        // TARGET SELECTORS
+        // ============================================================
+
+        // Alchemist gets +500 priority — kill it before it crafts another revive
+        static Hero GetBestLegalAttackTarget()
+        {
+            Hero best = null; float bestScore = -999999f;
+            foreach (Hero foe in TeamHeroCoder.BattleState.foeHeroes)
+            {
+                if (foe.health <= 0) continue;
+                if (!Utility.AreAbilityAndTargetLegal(Ability.Attack, foe, false)) continue;
+
+                float score = GetEnemyThreatScore(foe)
+                            + (1f - GetHealthRatio(foe)) * 150f
+                            - foe.physicalDefense * 1.2f;
+                if (foe.jobClass == HeroJobClass.Alchemist) score += 500f;
+                if (score > bestScore) { bestScore = score; best = foe; }
+            }
+            return best;
+        }
+
+        static Hero GetFoeByClass(HeroJobClass jobClass)
+        {
+            foreach (Hero foe in TeamHeroCoder.BattleState.foeHeroes)
+                if (foe.health > 0 && foe.jobClass == jobClass) return foe;
+            return null;
+        }
+
+        static Hero GetLowestManaAlly(float threshold)
+        {
+            Hero lowest = null; float lowestRatio = threshold + 0.001f;
+            foreach (Hero ally in TeamHeroCoder.BattleState.allyHeroes)
+            {
+                if (ally.health <= 0) continue;
+                float r = GetManaRatio(ally);
+                if (r <= lowestRatio) { lowestRatio = r; lowest = ally; }
+            }
+            return lowest;
+        }
+
+        // ============================================================
+        // SCORING + STATUS HELPERS
+        // ============================================================
+
+        static float GetEnemyThreatScore(Hero hero)
+        {
+            if (hero == null) return -999999f;
+            return hero.speed * 2.5f + hero.physicalAttack * 2.0f
+                 + hero.special * 2.0f + hero.mana * 0.5f
+                 + (1f - GetHealthRatio(hero)) * 40f;
+        }
+
+        static float GetHealthRatio(Hero hero)
+        {
+            if (hero == null || hero.maxHealth <= 0) return 2f;
+            return (float)hero.health / hero.maxHealth;
+        }
+
+        static float GetManaRatio(Hero hero)
+        {
+            if (hero == null || hero.maxMana <= 0) return 2f;
+            return (float)hero.mana / hero.maxMana;
+        }
+
+        static int GetStatusDuration(Hero hero, StatusEffect status)
+        {
+            if (hero == null) return 0;
+            foreach (StatusEffectAndDuration se in hero.statusEffectsAndDurations)
+                if (se.statusEffect == status) return se.duration;
+            return 0;
+        }
+
+        static bool HasStatus(Hero hero, StatusEffect status)
+        {
+            if (hero == null) return false;
+            foreach (StatusEffectAndDuration se in hero.statusEffectsAndDurations)
+                if (se.statusEffect == status) return true;
+            return false;
+        }
+
+        static Hero GetBestDeadAlly()
+        {
+            foreach (Hero ally in TeamHeroCoder.BattleState.allyHeroes)
+                if (ally.health <= 0) return ally;
+            return null;
+        }
+
+        static Hero GetLowestHealthAlly()
+        {
+            Hero lowest = null; float lowestRatio = 2f;
+            foreach (Hero ally in TeamHeroCoder.BattleState.allyHeroes)
+            {
+                if (ally.health <= 0) continue;
+                float r = GetHealthRatio(ally);
+                if (r < lowestRatio) { lowestRatio = r; lowest = ally; }
+            }
+            return lowest;
+        }
+
+        static float GetAllyValueScore(Hero hero)
+        {
+            if (hero == null) return -999999f;
+            return hero.speed * 2.0f + hero.physicalAttack * 1.8f
+                 + hero.special * 1.8f + hero.mana * 0.5f;
+        }
+
+        static int CountEssenceInInventory() => TeamHeroCoder.BattleState.allyEssenceCount;
+    }
+}
