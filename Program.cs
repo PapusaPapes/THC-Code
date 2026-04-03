@@ -16,18 +16,19 @@ namespace PlayerCoder
     }
 
     // My team: Rogue / Alchemist / Cleric
-    // vs 2 Rogues + Wizard
-    // Wizard is priority kill — Fireball is AOE and will chunk the whole team
-    // Poison and Slow are pointless — enemy has 5 full remedies and 5 poison remedies
-    // SilenceStrike only on the Wizard — worth burning their silence remedies
-    // Alchemist Dispels and Slows the Wizard, everyone focuses it down fast
+    // vs Rogue (Assassin+Bandit) / 2 Wizards (Aberrant) / Fighter (Guardian+Paladin)
+    // Double Petrify is the main threat cleanse it 
+    // Rogue Stealth bypasses Fighter 
+    // Silence both Wizards
+    // Kill order: their Rogue > Wizards > Fighter
+    // Alchemist crafts Petrify Remedies from Essence
 
     public static class MyAI
     {
         public static string FolderExchangePath = "C:/Users/rmatt/AppData/LocalLow/Ludus Ventus/Team Hero Coder";
 
-        // tracking crafted items manually since they don't show in allyInventory
-        public static int PotionCount = 0;
+        // starting items: 1 potion, 1 revive, 4 petrify remedies, 3 full remedies, 20 essence
+        public static int PotionCount = 1;
         public static int EtherCount  = 0;
 
         // thresholds
@@ -36,6 +37,14 @@ namespace PlayerCoder
         const float LOW_HP_LIGHT    = 0.70f;
         const float LOW_MANA        = 0.30f;
 
+        static readonly HeroJobClass[] SilencePriority = {
+            HeroJobClass.Rogue,   HeroJobClass.Wizard,  HeroJobClass.Cleric,
+            HeroJobClass.Alchemist, HeroJobClass.Fighter, HeroJobClass.Monk,
+        };
+        static readonly HeroJobClass[] SlowPriority = {
+            HeroJobClass.Wizard,  HeroJobClass.Rogue,   HeroJobClass.Monk,
+            HeroJobClass.Fighter, HeroJobClass.Cleric,  HeroJobClass.Alchemist,
+        };
         static readonly HeroJobClass[] HastePriority = {
             HeroJobClass.Rogue,     HeroJobClass.Monk,    HeroJobClass.Fighter,
             HeroJobClass.Alchemist, HeroJobClass.Cleric,  HeroJobClass.Wizard,
@@ -43,10 +52,6 @@ namespace PlayerCoder
         static readonly HeroJobClass[] FaithPriority = {
             HeroJobClass.Cleric,    HeroJobClass.Alchemist, HeroJobClass.Wizard,
             HeroJobClass.Fighter,   HeroJobClass.Rogue,     HeroJobClass.Monk,
-        };
-        static readonly HeroJobClass[] SlowPriority = {
-            HeroJobClass.Wizard,  HeroJobClass.Monk,    HeroJobClass.Fighter,
-            HeroJobClass.Rogue,   HeroJobClass.Cleric,  HeroJobClass.Alchemist,
         };
 
         static public void ProcessAI()
@@ -65,20 +70,43 @@ namespace PlayerCoder
         }
 
         // ROGUE
-        // use items for Item Jockey > silence wizard only > attack wizard
+        // cleanse petrify immediately > use items for Item Jockey > silence Wizards > attack their Rogue
         static void HandleRogue(Hero actor)
         {
             Console.WriteLine("Rogue branch");
 
-            // use ether on whoever needs mana — triggers Item Jockey
+            // petrify remedies trigger Item Jockey too
+            if (Utility.AreAbilityAndTargetLegal(Ability.PetrifyRemedy, actor, false))
+            {
+                foreach (Hero ally in TeamHeroCoder.BattleState.allyHeroes)
+                {
+                    if (ally.health <= 0) continue;
+                    if (HasStatus(ally, StatusEffect.Petrified) || HasStatus(ally, StatusEffect.Petrifying))
+                    { Act(actor, Ability.PetrifyRemedy, ally); return; }
+                }
+            }
+
+            // use full remedy on silenced or poisoned allies
+            if (Utility.AreAbilityAndTargetLegal(Ability.FullRemedy, actor, false))
+            {
+                foreach (Hero ally in TeamHeroCoder.BattleState.allyHeroes)
+                {
+                    if (ally.health <= 0) continue;
+                    if (HasStatus(ally, StatusEffect.Doom) || HasStatus(ally, StatusEffect.Silence)
+                        || HasStatus(ally, StatusEffect.Poison))
+                    { Act(actor, Ability.FullRemedy, ally); return; }
+                }
+            }
+
+            // use ether on whoever needs mana triggers Item Jockey
             if (EtherCount > 0)
             {
                 Hero etherTarget = GetLowestManaAlly(LOW_MANA);
-                if (etherTarget != null)
+                if (etherTarget != null && Utility.AreAbilityAndTargetLegal(Ability.Ether, etherTarget, false))
                     if (TryUseItem(actor, Ability.Ether, etherTarget, ref EtherCount)) return;
             }
 
-            // use potion on whoever needs HP — triggers Item Jockey
+            // use potion on whoever needs HP triggers Item Jockey
             if (PotionCount > 0)
             {
                 Hero potionTarget = GetLowestHealthAlly();
@@ -86,20 +114,15 @@ namespace PlayerCoder
                     if (TryUseItem(actor, Ability.Potion, potionTarget, ref PotionCount)) return;
             }
 
-            // silence the Wizard only — Rogues have no mana abilities so silencing them is wasted
+            // silence Wizards first 
             if (actor.mana >= 15)
             {
-                foreach (Hero foe in TeamHeroCoder.BattleState.foeHeroes)
-                {
-                    if (foe.health <= 0 || foe.jobClass != HeroJobClass.Wizard) continue;
-                    if (GetStatusDuration(foe, StatusEffect.Silence) <= 1
-                        && Utility.AreAbilityAndTargetLegal(Ability.SilenceStrike, foe, false))
-                    { Act(actor, Ability.SilenceStrike, foe); return; }
-                }
+                Hero target = GetPriorityFoeTarget(SilencePriority, StatusEffect.Silence, reapplyBelowDuration: 1);
+                if (target != null && Utility.AreAbilityAndTargetLegal(Ability.SilenceStrike, target, false))
+                { Act(actor, Ability.SilenceStrike, target); return; }
             }
 
-            // skip poison — 5 poison + 5 full remedies means it never sticks
-            // just attack and burst the Wizard down
+            // attack their Rogue first — most dangerous enemy
             Hero attackTarget = GetBestLegalAttackTarget();
             if (attackTarget != null) { Act(actor, Ability.Attack, attackTarget); return; }
 
@@ -107,7 +130,7 @@ namespace PlayerCoder
         }
 
         // CLERIC
-        // res > cleanse > heal > autolife > faith > haste > attack
+        // res > cleanse petrify > cleanse other statuses > heal > autolife > faith > haste > attack
         static void HandleCleric(Hero actor)
         {
             Console.WriteLine("Cleric branch");
@@ -115,53 +138,71 @@ namespace PlayerCoder
             if (actor.mana >= 25)
             {
                 Hero dead = GetBestDeadAllyToRevive();
-                if (dead != null) { Act(actor, Ability.Resurrection, dead); return; }
+                if (dead != null && Utility.AreAbilityAndTargetLegal(Ability.Resurrection, dead, false))
+                { Act(actor, Ability.Resurrection, dead); return; }
+            }
+
+            // quickcleanse petrify first — highest priority
+            foreach (Hero ally in TeamHeroCoder.BattleState.allyHeroes)
+            {
+                if (ally.health <= 0) continue;
+                if ((HasStatus(ally, StatusEffect.Petrified) || HasStatus(ally, StatusEffect.Petrifying))
+                    && actor.mana >= 10
+                    && Utility.AreAbilityAndTargetLegal(Ability.QuickCleanse, ally, false))
+                { Act(actor, Ability.QuickCleanse, ally); return; }
             }
 
             Hero cleanseTarget = GetBestCleanseTarget();
-            if (cleanseTarget != null) { Act(actor, Ability.QuickCleanse, cleanseTarget); return; }
+            if (cleanseTarget != null && actor.mana >= 10
+                && Utility.AreAbilityAndTargetLegal(Ability.QuickCleanse, cleanseTarget, false))
+            { Act(actor, Ability.QuickCleanse, cleanseTarget); return; }
 
             Hero lowestAlly = GetLowestHealthAlly();
             if (lowestAlly != null)
             {
                 float ratio = GetHealthRatio(lowestAlly);
 
-                if (ratio <= LOW_HP_CRITICAL && actor.mana >= 15)
+                if (ratio <= LOW_HP_CRITICAL && actor.mana >= 15
+                    && Utility.AreAbilityAndTargetLegal(Ability.QuickHeal, lowestAlly, false))
                     { Act(actor, Ability.QuickHeal, lowestAlly); return; }
 
                 if (ratio <= LOW_HP_CRITICAL && PotionCount > 0)
                     if (TryUseItem(actor, Ability.Potion, lowestAlly, ref PotionCount)) return;
 
-                if (ratio <= LOW_HP_SERIOUS && actor.mana >= 20)
+                if (ratio <= LOW_HP_SERIOUS && actor.mana >= 20
+                    && Utility.AreAbilityAndTargetLegal(Ability.CureSerious, lowestAlly, false))
                     { Act(actor, Ability.CureSerious, lowestAlly); return; }
 
                 if (ratio <= LOW_HP_SERIOUS && PotionCount > 0)
                     if (TryUseItem(actor, Ability.Potion, lowestAlly, ref PotionCount)) return;
 
-                if (ratio <= LOW_HP_LIGHT && actor.mana >= 10)
+                if (ratio <= LOW_HP_LIGHT && actor.mana >= 10
+                    && Utility.AreAbilityAndTargetLegal(Ability.CureLight, lowestAlly, false))
                     { Act(actor, Ability.CureLight, lowestAlly); return; }
 
                 if (ratio <= LOW_HP_LIGHT && PotionCount > 0)
                     if (TryUseItem(actor, Ability.Potion, lowestAlly, ref PotionCount)) return;
             }
 
-            // rogue gets autolife first since it dies the most
             if (actor.mana >= 25)
             {
                 Hero autoLifeTarget = GetBestAutoLifeTarget();
-                if (autoLifeTarget != null) { Act(actor, Ability.AutoLife, autoLifeTarget); return; }
+                if (autoLifeTarget != null && Utility.AreAbilityAndTargetLegal(Ability.AutoLife, autoLifeTarget, false))
+                { Act(actor, Ability.AutoLife, autoLifeTarget); return; }
             }
 
             if (actor.mana >= 15)
             {
                 Hero faithTarget = GetPriorityAllyTarget(FaithPriority, StatusEffect.Faith, reapplyBelowDuration: 1);
-                if (faithTarget != null) { Act(actor, Ability.Faith, faithTarget); return; }
+                if (faithTarget != null && Utility.AreAbilityAndTargetLegal(Ability.Faith, faithTarget, false))
+                { Act(actor, Ability.Faith, faithTarget); return; }
             }
 
             if (actor.mana >= 15)
             {
                 Hero hasteTarget = GetPriorityAllyTarget(HastePriority, StatusEffect.Haste, reapplyBelowDuration: 1);
-                if (hasteTarget != null) { Act(actor, Ability.Haste, hasteTarget); return; }
+                if (hasteTarget != null && Utility.AreAbilityAndTargetLegal(Ability.Haste, hasteTarget, false))
+                { Act(actor, Ability.Haste, hasteTarget); return; }
             }
 
             Hero attackTarget = GetBestLegalAttackTarget();
@@ -171,13 +212,13 @@ namespace PlayerCoder
         }
 
         // ALCHEMIST
-        // craft ether > use ether > dispel wizard > slow wizard > craft potion > use potion > cleanse > haste > attack
+        // craft ether > use ether > craft petrify remedy > slow wizards > attack
         static void HandleAlchemist(Hero actor)
         {
             Console.WriteLine("Alchemist branch");
 
-            // craft ether first so we never run dry on mana
-            if (actor.mana >= 10 && EtherCount == 0 && CountEssenceInInventory() >= 2)
+            // craft ether first — nothing works without mana
+            if (EtherCount == 0 && CountEssenceInInventory() >= 2)
             {
                 Console.WriteLine($"Alchemist crafts Ether (Essence: {CountEssenceInInventory()})");
                 TeamHeroCoder.PerformHeroAbility(Ability.CraftEther, actor);
@@ -185,23 +226,23 @@ namespace PlayerCoder
                 return;
             }
 
-            // use ether on whoever is lowest on mana
+            // use ether on whoever needs mana
             if (EtherCount > 0)
             {
                 Hero etherTarget = GetLowestManaAlly(0.50f);
-                if (etherTarget != null)
-                    if (TryUseItem(actor, Ability.Ether, etherTarget, ref EtherCount)) return;
+                if (etherTarget != null && Utility.AreAbilityAndTargetLegal(Ability.Ether, etherTarget, false))
+                { TryUseItem(actor, Ability.Ether, etherTarget, ref EtherCount); return; }
             }
 
-            // dispel wizard buffs first — Faith or Haste on a Wizard is dangerous
-            if (actor.mana >= 15)
+            // craft petrify remedy if running low
+            if (!AllyInventoryHasPetrifyRemedy() && CountEssenceInInventory() >= 2)
             {
-                Hero dispelTarget = GetBestDispelTarget();
-                if (dispelTarget != null && Utility.AreAbilityAndTargetLegal(Ability.Dispel, dispelTarget, false))
-                { Act(actor, Ability.Dispel, dispelTarget); return; }
+                Console.WriteLine($"Alchemist crafts Petrify Remedy (Essence: {CountEssenceInInventory()})");
+                TeamHeroCoder.PerformHeroAbility(Ability.CraftPetrifyRemedy, actor);
+                return;
             }
 
-            // slow the wizard — reduces how often Fireball and FlameStrike fire
+            // slow both Wizards
             if (actor.mana >= 15)
             {
                 Hero slowTarget = GetPriorityFoeTarget(SlowPriority, StatusEffect.Slow, reapplyBelowDuration: 1);
@@ -209,38 +250,23 @@ namespace PlayerCoder
                 { Act(actor, Ability.Slow, slowTarget); return; }
             }
 
-            // attack wizard if it's the best legal target
-            Hero wizardCheck = GetBestLegalAttackTarget();
-            if (wizardCheck != null && wizardCheck.jobClass == HeroJobClass.Wizard)
-            { Act(actor, Ability.Attack, wizardCheck); return; }
-
-            // use potions before crafting more
-            if (PotionCount > 0)
+            if (actor.mana >= 15)
             {
-                Hero potionTarget = GetLowestHealthAlly();
-                if (potionTarget != null && GetHealthRatio(potionTarget) <= LOW_HP_LIGHT)
-                    if (TryUseItem(actor, Ability.Potion, potionTarget, ref PotionCount)) return;
+                foreach (Hero foe in TeamHeroCoder.BattleState.foeHeroes)
+                {
+                    if (foe.health <= 0 || foe.jobClass != HeroJobClass.Fighter) continue;
+                    if (HasStatus(foe, StatusEffect.AutoLife)
+                        && Utility.AreAbilityAndTargetLegal(Ability.Dispel, foe, false))
+                    { Act(actor, Ability.Dispel, foe); return; }
+                }
             }
 
-            // craft potions when team needs them
-            if (actor.mana >= 10 && PotionCount <= 0 && TeamNeedsPotion() && CountEssenceInInventory() >= 2)
-            {
-                Console.WriteLine($"Alchemist crafts Potion (Essence: {CountEssenceInInventory()})");
-                TeamHeroCoder.PerformHeroAbility(Ability.CraftPotion, actor);
-                PotionCount = 2;
-                return;
-            }
-
+            // cleanse any petrified allies
             if (actor.mana >= 15)
             {
                 Hero cleanseTarget = GetBestCleanseTarget();
-                if (cleanseTarget != null) { Act(actor, Ability.Cleanse, cleanseTarget); return; }
-            }
-
-            if (actor.mana >= 15)
-            {
-                Hero hasteTarget = GetPriorityAllyTarget(HastePriority, StatusEffect.Haste, reapplyBelowDuration: 1);
-                if (hasteTarget != null) { Act(actor, Ability.Haste, hasteTarget); return; }
+                if (cleanseTarget != null && Utility.AreAbilityAndTargetLegal(Ability.Cleanse, cleanseTarget, false))
+                { Act(actor, Ability.Cleanse, cleanseTarget); return; }
             }
 
             Hero attackTarget = GetBestLegalAttackTarget();
@@ -250,7 +276,7 @@ namespace PlayerCoder
         }
 
         // ============================================================
-        // HELPERS — perform ability + log in one line
+        // HELPERS
         // ============================================================
 
         static void Act(Hero actor, Ability ability, Hero target)
@@ -301,7 +327,7 @@ namespace PlayerCoder
             return null;
         }
 
-        // Wizard gets +500 priority — kill it before Fireball wipes the team
+        // their Rogue steals our remedies with Larceny kill it first
         static Hero GetBestLegalAttackTarget()
         {
             Hero best = null; float bestScore = -999999f;
@@ -314,13 +340,12 @@ namespace PlayerCoder
                             + (1f - GetHealthRatio(foe)) * 150f
                             - foe.physicalDefense * 1.2f;
                 if (HasStatus(foe, StatusEffect.Poison)) score += 50f;
-                if (foe.jobClass == HeroJobClass.Wizard)  score += 500f;
+                if (foe.jobClass == HeroJobClass.Rogue)  score += 800f;
                 if (score > bestScore) { bestScore = score; best = foe; }
             }
             return best;
         }
 
-        // rogue gets autolife first, then whoever scores highest
         static Hero GetBestAutoLifeTarget()
         {
             foreach (Hero ally in TeamHeroCoder.BattleState.allyHeroes)
@@ -343,31 +368,14 @@ namespace PlayerCoder
             {
                 if (ally.health <= 0) continue;
                 float score = 0f;
+                if (HasStatus(ally, StatusEffect.Petrified))  score += 250f;
                 if (HasStatus(ally, StatusEffect.Petrifying)) score += 200f;
+                if (HasStatus(ally, StatusEffect.Doom))       score += 180f;
                 if (HasStatus(ally, StatusEffect.Silence))    score += 120f;
                 if (HasStatus(ally, StatusEffect.Poison))     score += 80f;
                 if (score <= 0f) continue;
                 score += GetAllyValueScore(ally) + (1f - GetHealthRatio(ally)) * 100f;
                 if (score > bestScore) { bestScore = score; best = ally; }
-            }
-            return best;
-        }
-
-        // dispel whoever has the most dangerous buffs
-        static Hero GetBestDispelTarget()
-        {
-            Hero best = null; float bestScore = -1f;
-            foreach (Hero foe in TeamHeroCoder.BattleState.foeHeroes)
-            {
-                if (foe.health <= 0) continue;
-                float score = 0f;
-                if (HasStatus(foe, StatusEffect.AutoLife)) score += 160f;
-                if (HasStatus(foe, StatusEffect.Haste))    score += 140f;
-                if (HasStatus(foe, StatusEffect.Brave))    score += 100f;
-                if (HasStatus(foe, StatusEffect.Faith))    score += 100f;
-                if (score <= 0f) continue;
-                score += GetEnemyThreatScore(foe);
-                if (score > bestScore) { bestScore = score; best = foe; }
             }
             return best;
         }
@@ -452,6 +460,13 @@ namespace PlayerCoder
             if (hero == null) return false;
             foreach (StatusEffectAndDuration se in hero.statusEffectsAndDurations)
                 if (se.statusEffect == status) return true;
+            return false;
+        }
+
+        static bool AllyInventoryHasPetrifyRemedy()
+        {
+            foreach (InventoryItem ii in TeamHeroCoder.BattleState.allyInventory)
+                if (ii.item == Item.PetrifyRemedy && ii.count > 0) return true;
             return false;
         }
 
