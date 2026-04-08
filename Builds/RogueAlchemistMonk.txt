@@ -1,0 +1,801 @@
+using System;
+using System.Collections.Generic;
+using TeamHeroCoderLibrary;
+
+namespace PlayerCoder
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            Console.WriteLine("Connecting...");
+
+            var connectionManager = new GameClientConnectionManager();
+            connectionManager.SetExchangePath(MyAI.FolderExchangePath);
+            connectionManager.onHeroHasInitiative = MyAI.ProcessAI;
+            connectionManager.StartListeningToGameClientForHeroPlayRequests();
+        }
+    }
+
+    public static class MyAI
+    {
+        public static string FolderExchangePath =
+            "C:/Users/rmatt/AppData/LocalLow/Ludus Ventus/Team Hero Coder";
+
+        private const float CriticalHealth = 0.30f;
+        private const float LowHealth = 0.55f;
+        private const float LightHealth = 0.75f;
+        private const float HeavyPressureHealth = 0.80f;
+        private const float LowMana = 0.22f;
+        private const float RogueLowMana = 0.15f;
+        private const float FinishThreshold = 0.33f;
+        private const float PoisonDangerThreshold = 0.70f;
+
+        private static readonly HeroJobClass[] FocusOrder =
+        {
+            HeroJobClass.Cleric,
+            HeroJobClass.Alchemist,
+            HeroJobClass.Wizard,
+            HeroJobClass.Rogue,
+            HeroJobClass.Monk,
+            HeroJobClass.Fighter
+        };
+
+        public static void ProcessAI()
+        {
+            Hero actor = TeamHeroCoder.BattleState.heroWithInitiative;
+            if (actor == null) return;
+
+            Console.WriteLine(
+                $"Actor: {actor.jobClass} HP:{actor.health}/{actor.maxHealth} MP:{actor.mana}/{actor.maxMana}");
+
+            switch (actor.jobClass)
+            {
+                case HeroJobClass.Rogue:     ControlRogue(actor);     return;
+                case HeroJobClass.Alchemist: ControlAlchemist(actor); return;
+                case HeroJobClass.Monk:      ControlMonk(actor);      return;
+                default:                     Wait(actor);              return;
+            }
+        }
+
+        private static void ControlRogue(Hero actor)
+        {
+            if (TryUseEmergencyItem(actor)) return;
+            if (TryUseEther(actor)) return;
+
+            if (NeedEmergencyStabilize())
+            {
+                if (TryUseEmergencyItem(actor)) return;
+            }
+
+            if (TrySilencePremiumSupport(actor)) return;
+            if (TryFinishTarget(actor)) return;
+
+            if (IsSupportFight())
+            {
+                if (TryAttackFocus(actor)) return;
+                if (TryPoisonSupport(actor)) return;
+                if (TryStunFocus(actor)) return;
+                Wait(actor);
+                return;
+            }
+
+            if (TryAttackFocus(actor)) return;
+            if (TryStunFocus(actor)) return;
+            if (TryPoisonSupport(actor)) return;
+
+            Wait(actor);
+        }
+
+        private static void ControlAlchemist(Hero actor)
+        {
+            if (TryEmergencyCleanse(actor)) return;
+
+            // use mega elixir if team is hurting
+            if (CountLivingAlliesBelow(LowHealth) >= 2)
+                if (TrySelfCast(actor, Ability.MegaElixir)) return;
+
+            // use elixir on critically low ally
+            Hero critical = FindLowestLivingAlly();
+            if (critical != null && HealthRatio(critical) <= CriticalHealth)
+                if (TryAct(actor, Ability.Elixir, critical)) return;
+
+            // use potion on seriously low ally
+            if (critical != null && HealthRatio(critical) <= LowHealth)
+                if (TryAct(actor, Ability.Potion, critical)) return;
+
+            // revive dead ally
+            Hero dead = FindBestDeadAlly();
+            if (dead != null && TryAct(actor, Ability.Revive, dead)) return;
+
+            // craft survival items — priority: mega elixir > elixir > potion > revive
+            if (CountEssence() >= 4 && !AnyAllyCanUse(Ability.MegaElixir))
+                if (TrySelfCast(actor, Ability.CraftMegaElixir)) return;
+
+            if (CountEssence() >= 3 && !AnyAllyCanUse(Ability.Elixir))
+                if (TrySelfCast(actor, Ability.CraftElixir)) return;
+
+            if (CountEssence() >= 2 && !AnyAllyCanUse(Ability.Potion))
+                if (TrySelfCast(actor, Ability.CraftPotion)) return;
+
+            if (CountEssence() >= 2 && dead != null && !AnyAllyCanUse(Ability.Revive))
+                if (TrySelfCast(actor, Ability.CraftRevive)) return;
+
+            // craft ether only after survival items are covered
+            if (TryCraftMana(actor)) return;
+
+            // craft remedies
+            if (TryCraftEmergencyCoverage(actor)) return;
+
+            if (NeedEmergencyStabilize())
+            {
+                if (TryDispelAutoLifeOnly(actor)) return;
+                if (EnemyHasCasterSupport() && TrySlowPhysicalThreat(actor)) return;
+                if (TryAttackFocus(actor)) return;
+                Wait(actor);
+                return;
+            }
+
+            if (TryDispelAutoLifeOnly(actor)) return;
+            if (EnemyHasCasterSupport()) if (TrySlowPriorityTarget(actor)) return;
+            if (TryAttackFocus(actor)) return;
+
+            if (TeamIsStable()) if (TryHasteBestAlly(actor)) return;
+
+            Wait(actor);
+        }
+
+        private static void ControlMonk(Hero actor)
+        {
+            if (TryUseEmergencyItem(actor)) return;
+            if (TryUseEther(actor)) return;
+
+            if (NeedEmergencyStabilize())
+            {
+                if (TryDebravePhysicalThreat(actor)) return;
+                if (TryDefaithMagicThreat(actor)) return;
+                if (TryFinishTarget(actor)) return;
+                if (TryAttackFocus(actor)) return;
+                Wait(actor);
+                return;
+            }
+
+            // vs pure physical teams (no casters) — Flurry hits all enemies through Cover
+            // do this BEFORE Debrave so we don't waste turns on already-Debraved fighters
+            if (!EnemyHasCasterSupport())
+            {
+                if (ShouldUseFlurry(actor) && TryFlurry(actor)) return;
+            }
+
+            if (EnemyHasHeavyPhysicalPressure())
+            {
+                if (TryDebravePhysicalThreat(actor)) return;
+            }
+
+            if (EnemyHasMagicPressure())
+            {
+                if (TryDefaithMagicThreat(actor)) return;
+            }
+
+            if (TryFinishTarget(actor)) return;
+
+            if (ShouldUseFlurry(actor))
+            {
+                if (TryFlurry(actor)) return;
+            }
+
+            if (NeedManaSupportFromChakra(actor))
+            {
+                if (TryChakra(actor)) return;
+            }
+
+            if (TryAttackFocus(actor)) return;
+
+            Wait(actor);
+        }
+
+        private static bool TryUseEmergencyItem(Hero actor)
+        {
+            Hero petrifyTarget = FindAllyWithAnyStatus(StatusEffect.Petrified, StatusEffect.Petrifying);
+            if (petrifyTarget != null && TryAct(actor, Ability.PetrifyRemedy, petrifyTarget)) return true;
+            if (petrifyTarget != null && TryAct(actor, Ability.FullRemedy, petrifyTarget)) return true;
+
+            Hero doomTarget = FindAllyWithAnyStatus(StatusEffect.Doom);
+            if (doomTarget != null && TryAct(actor, Ability.FullRemedy, doomTarget)) return true;
+
+            Hero silencedCore = FindSilencedCoreAlly();
+            if (silencedCore != null && TryAct(actor, Ability.SilenceRemedy, silencedCore)) return true;
+            if (silencedCore != null && TryAct(actor, Ability.FullRemedy, silencedCore)) return true;
+
+            Hero poisonTarget = FindPoisonedEmergencyTarget();
+            if (poisonTarget != null && TryAct(actor, Ability.PoisonRemedy, poisonTarget)) return true;
+
+            // use mega elixir when 2+ allies are hurting
+            if (CountLivingAlliesBelow(LowHealth) >= 2)
+                if (TrySelfCast(actor, Ability.MegaElixir)) return true;
+
+            Hero dead = FindBestDeadAlly();
+            if (dead != null && TryAct(actor, Ability.Revive, dead)) return true;
+            if (dead != null && CountEssence() >= 2 && TrySelfCast(actor, Ability.CraftRevive)) return true;
+
+            // use elixir or potion on critically low ally
+            Hero lowHealth = FindLowestLivingAlly();
+            if (lowHealth != null && HealthRatio(lowHealth) <= CriticalHealth)
+            {
+                if (TryAct(actor, Ability.Elixir, lowHealth)) return true;
+                if (TryAct(actor, Ability.Potion, lowHealth)) return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryUseEther(Hero actor)
+        {
+            Hero target = FindBestEtherTarget();
+            return target != null && TryAct(actor, Ability.Ether, target);
+        }
+
+        private static bool TryEmergencyCleanse(Hero actor)
+        {
+            Hero target = FindAllyWithAnyStatus(
+                StatusEffect.Petrified, StatusEffect.Petrifying,
+                StatusEffect.Doom, StatusEffect.Silence);
+            return target != null && TryAct(actor, Ability.Cleanse, target);
+        }
+
+        private static bool TryCraftEmergencyCoverage(Hero actor)
+        {
+            if (CountEssence() < 2) return false;
+
+            if (EnemyCanPetrify() && !AnyAllyCanUse(Ability.PetrifyRemedy))
+                return TrySelfCast(actor, Ability.CraftPetrifyRemedy);
+
+            if (EnemyCanSilence() && !AnyAllyCanUse(Ability.SilenceRemedy))
+                return TrySelfCast(actor, Ability.CraftSilenceRemedy);
+
+            if (EnemyCanPoison() && !AnyAllyCanUse(Ability.PoisonRemedy))
+                return TrySelfCast(actor, Ability.CraftPoisonRemedy);
+
+            if (ShouldCraftFullRemedy(actor))
+                return TrySelfCast(actor, Ability.CraftFullRemedy);
+
+            return false;
+        }
+
+        private static bool TryCraftMana(Hero actor)
+        {
+            if (CountEssence() < 2) return false;
+
+            // always craft ether if we have none in inventory yet — don't wait until mana is low
+            if (!AnyAllyCanUse(Ability.Ether))
+                return TrySelfCast(actor, Ability.CraftEther);
+
+            // use ether on whoever needs it
+            Hero target = FindBestEtherTarget();
+            if (target != null && TryAct(actor, Ability.Ether, target)) return true;
+
+            return false;
+        }
+
+        // only dispel AutoLife — never loop-dispel Brave since Fighter re-applies it every turn
+        private static bool TryDispelAutoLifeOnly(Hero actor)
+        {
+            foreach (Hero enemy in LivingEnemies())
+            {
+                if (!HasStatus(enemy, StatusEffect.AutoLife)) continue;
+                if (!CanUse(actor, Ability.Dispel, enemy)) continue;
+                return TryAct(actor, Ability.Dispel, enemy);
+            }
+            return false;
+        }
+
+        private static bool TrySlowPriorityTarget(Hero actor)
+        {
+            Hero monk    = FindFirstLegalUnsloowed(HeroJobClass.Monk,      Ability.Slow);
+            if (monk != null)      return TryAct(actor, Ability.Slow, monk);
+            Hero cleric  = FindFirstLegalUnsloowed(HeroJobClass.Cleric,    Ability.Slow);
+            if (cleric != null)    return TryAct(actor, Ability.Slow, cleric);
+            Hero alch    = FindFirstLegalUnsloowed(HeroJobClass.Alchemist, Ability.Slow);
+            if (alch != null)      return TryAct(actor, Ability.Slow, alch);
+            Hero wizard  = FindFirstLegalUnsloowed(HeroJobClass.Wizard,    Ability.Slow);
+            if (wizard != null)    return TryAct(actor, Ability.Slow, wizard);
+            Hero rogue   = FindFirstLegalUnsloowed(HeroJobClass.Rogue,     Ability.Slow);
+            if (rogue != null)     return TryAct(actor, Ability.Slow, rogue);
+            Hero fighter = FindFirstLegalUnsloowed(HeroJobClass.Fighter,   Ability.Slow);
+            if (fighter != null)   return TryAct(actor, Ability.Slow, fighter);
+            return false;
+        }
+
+        private static bool TrySlowPhysicalThreat(Hero actor)
+        {
+            Hero monk    = FindFirstLegalUnsloowed(HeroJobClass.Monk,    Ability.Slow);
+            if (monk != null)    return TryAct(actor, Ability.Slow, monk);
+            Hero fighter = FindFirstLegalUnsloowed(HeroJobClass.Fighter, Ability.Slow);
+            if (fighter != null) return TryAct(actor, Ability.Slow, fighter);
+            return false;
+        }
+
+        private static bool TryHasteBestAlly(Hero actor)
+        {
+            Hero rogue    = FindLivingAlly(HeroJobClass.Rogue);
+            if (rogue != null    && !HasStatus(rogue,    StatusEffect.Haste) && TryAct(actor, Ability.Haste, rogue))    return true;
+            Hero monk     = FindLivingAlly(HeroJobClass.Monk);
+            if (monk != null     && !HasStatus(monk,     StatusEffect.Haste) && TryAct(actor, Ability.Haste, monk))     return true;
+            Hero alchemist = FindLivingAlly(HeroJobClass.Alchemist);
+            if (alchemist != null && !HasStatus(alchemist, StatusEffect.Haste) && TryAct(actor, Ability.Haste, alchemist)) return true;
+            return false;
+        }
+
+        private static bool TrySilencePremiumSupport(Hero actor)
+        {
+            Hero cleric   = FindFirstLegalUnsilenced(HeroJobClass.Cleric,    Ability.SilenceStrike);
+            if (cleric != null)    return TryAct(actor, Ability.SilenceStrike, cleric);
+
+            Hero alchemist = FindFirstLegalUnsilenced(HeroJobClass.Alchemist, Ability.SilenceStrike);
+            if (alchemist != null) return TryAct(actor, Ability.SilenceStrike, alchemist);
+
+            // silence Fighters too — blocks Brave, Cure Serious, Resurrection, QuickHit
+            Hero fighter = FindFirstLegalUnsilenced(HeroJobClass.Fighter, Ability.SilenceStrike);
+            if (fighter != null)   return TryAct(actor, Ability.SilenceStrike, fighter);
+
+            return false;
+        }
+
+        private static bool TryPoisonSupport(Hero actor)
+        {
+            Hero cleric   = FindFirstLegalUnpoisoned(HeroJobClass.Cleric,    Ability.PoisonStrike);
+            if (cleric != null)   return TryAct(actor, Ability.PoisonStrike, cleric);
+            Hero alchemist = FindFirstLegalUnpoisoned(HeroJobClass.Alchemist, Ability.PoisonStrike);
+            if (alchemist != null) return TryAct(actor, Ability.PoisonStrike, alchemist);
+            return false;
+        }
+
+        private static bool TryDebravePhysicalThreat(Hero actor)
+        {
+            Hero monk    = FindBestDebraveTarget(HeroJobClass.Monk);
+            if (monk != null)    return TryAct(actor, Ability.Debrave, monk);
+            Hero fighter = FindBestDebraveTarget(HeroJobClass.Fighter);
+            if (fighter != null) return TryAct(actor, Ability.Debrave, fighter);
+            return false;
+        }
+
+        private static bool TryDefaithMagicThreat(Hero actor)
+        {
+            Hero cleric   = FindBestDefaithTarget(HeroJobClass.Cleric);
+            if (cleric != null)   return TryAct(actor, Ability.Defaith, cleric);
+            Hero wizard   = FindBestDefaithTarget(HeroJobClass.Wizard);
+            if (wizard != null)   return TryAct(actor, Ability.Defaith, wizard);
+            Hero alchemist = FindBestDefaithTarget(HeroJobClass.Alchemist);
+            if (alchemist != null && IsSupportFight()) return TryAct(actor, Ability.Defaith, alchemist);
+            return false;
+        }
+
+        private static bool TryFlurry(Hero actor)   => TryAct(actor, Ability.FlurryOfBlows, actor);
+        private static bool TryChakra(Hero actor)   => TryAct(actor, Ability.Chakra, actor);
+
+        private static bool ShouldUseFlurry(Hero actor)
+        {
+            if (!CanUse(actor, Ability.FlurryOfBlows, actor)) return false;
+            int lowTargets = 0, living = 0;
+            foreach (Hero enemy in LivingEnemies())
+            {
+                living++;
+                if (HealthRatio(enemy) <= 0.45f) lowTargets++;
+            }
+            if (living >= 3 && lowTargets >= 2) return true;
+            return !EnemyHasCasterSupport() && living >= 3;
+        }
+
+        private static bool NeedManaSupportFromChakra(Hero actor)
+        {
+            if (!CanUse(actor, Ability.Chakra, actor)) return false;
+            Hero rogue     = FindLivingAlly(HeroJobClass.Rogue);
+            Hero alchemist = FindLivingAlly(HeroJobClass.Alchemist);
+            bool rogueLow     = rogue     != null && ManaRatio(rogue)     <= RogueLowMana;
+            bool alchemistLow = alchemist != null && ManaRatio(alchemist) <= LowMana;
+            return (rogueLow || alchemistLow) && actor.maxMana > 20;
+        }
+
+        private static bool TryFinishTarget(Hero actor)
+        {
+            Hero target = FindFocusTarget(Ability.Attack);
+            if (target == null) return false;
+            return HealthRatio(target) <= FinishThreshold && TryAct(actor, Ability.Attack, target);
+        }
+
+        private static bool TryAttackFocus(Hero actor)
+        {
+            Hero target = FindFocusTarget(Ability.Attack);
+            return target != null && TryAct(actor, Ability.Attack, target);
+        }
+
+        private static bool TryStunFocus(Hero actor)
+        {
+            Hero target = FindFocusTarget(Ability.StunStrike);
+            if (target == null) return false;
+            if (IsSupportFight() && target.jobClass == HeroJobClass.Fighter) return false;
+            return TryAct(actor, Ability.StunStrike, target);
+        }
+
+        private static Hero FindFocusTarget(Ability ability)
+        {
+            foreach (HeroJobClass jobClass in FocusOrder)
+            {
+                Hero target = FindLowestHealthLegalTarget(jobClass, ability);
+                if (target != null) return target;
+            }
+            return FindAnyLegalTarget(ability);
+        }
+
+        private static Hero FindLowestHealthLegalTarget(HeroJobClass jobClass, Ability ability)
+        {
+            Hero best = null; int lowestHealth = int.MaxValue;
+            foreach (Hero enemy in LivingEnemies())
+            {
+                if (enemy.jobClass != jobClass) continue;
+                if (!CanUse(TeamHeroCoder.BattleState.heroWithInitiative, ability, enemy)) continue;
+                if (enemy.health < lowestHealth) { lowestHealth = enemy.health; best = enemy; }
+            }
+            return best;
+        }
+
+        private static Hero FindAnyLegalTarget(Ability ability)
+        {
+            Hero best = null; float bestScore = float.MinValue;
+            foreach (Hero enemy in LivingEnemies())
+            {
+                if (!CanUse(TeamHeroCoder.BattleState.heroWithInitiative, ability, enemy)) continue;
+                float score = TargetPriorityBonus(enemy.jobClass) + MissingHealth(enemy) * 150f + enemy.speed;
+                if (score > bestScore) { bestScore = score; best = enemy; }
+            }
+            return best;
+        }
+
+        private static Hero FindFirstLegalUnsilenced(HeroJobClass jobClass, Ability ability)
+        {
+            foreach (Hero enemy in LivingEnemies())
+            {
+                if (enemy.jobClass != jobClass) continue;
+                if (HasStatus(enemy, StatusEffect.Silence)) continue;
+                if (!CanUse(TeamHeroCoder.BattleState.heroWithInitiative, ability, enemy)) continue;
+                return enemy;
+            }
+            return null;
+        }
+
+        private static Hero FindFirstLegalUnpoisoned(HeroJobClass jobClass, Ability ability)
+        {
+            foreach (Hero enemy in LivingEnemies())
+            {
+                if (enemy.jobClass != jobClass) continue;
+                if (HasStatus(enemy, StatusEffect.Poison)) continue;
+                if (!CanUse(TeamHeroCoder.BattleState.heroWithInitiative, ability, enemy)) continue;
+                return enemy;
+            }
+            return null;
+        }
+
+        private static Hero FindFirstLegalUnsloowed(HeroJobClass jobClass, Ability ability)
+        {
+            foreach (Hero enemy in LivingEnemies())
+            {
+                if (enemy.jobClass != jobClass) continue;
+                // only re-apply Slow when it has 1 turn or less remaining
+                if (GetStatusDuration(enemy, StatusEffect.Slow) > 1) continue;
+                if (!CanUse(TeamHeroCoder.BattleState.heroWithInitiative, ability, enemy)) continue;
+                return enemy;
+            }
+            return null;
+        }
+
+        private static int GetStatusDuration(Hero hero, StatusEffect status)
+        {
+            if (hero == null) return 0;
+            foreach (StatusEffectAndDuration effect in hero.statusEffectsAndDurations)
+                if (effect.statusEffect == status) return effect.duration;
+            return 0;
+        }
+
+        private static Hero FindBestDebraveTarget(HeroJobClass jobClass)
+        {
+            Hero best = null; float bestScore = float.MinValue;
+            foreach (Hero enemy in LivingEnemies())
+            {
+                if (enemy.jobClass != jobClass) continue;
+                if (HasStatus(enemy, StatusEffect.Debrave)) continue;
+                if (!CanUse(TeamHeroCoder.BattleState.heroWithInitiative, Ability.Debrave, enemy)) continue;
+                float score = TargetPriorityBonus(enemy.jobClass) + enemy.physicalAttack * 3f + enemy.speed * 2f;
+                if (score > bestScore) { bestScore = score; best = enemy; }
+            }
+            return best;
+        }
+
+        private static Hero FindBestDefaithTarget(HeroJobClass jobClass)
+        {
+            Hero best = null; float bestScore = float.MinValue;
+            foreach (Hero enemy in LivingEnemies())
+            {
+                if (enemy.jobClass != jobClass) continue;
+                if (HasStatus(enemy, StatusEffect.Defaith)) continue;
+                if (!CanUse(TeamHeroCoder.BattleState.heroWithInitiative, Ability.Defaith, enemy)) continue;
+                float score = TargetPriorityBonus(enemy.jobClass) + enemy.special * 3f + enemy.speed * 2f;
+                if (score > bestScore) { bestScore = score; best = enemy; }
+            }
+            return best;
+        }
+
+        private static Hero FindBestDeadAlly()
+        {
+            Hero best = null; float bestScore = float.MinValue;
+            foreach (Hero ally in TeamHeroCoder.BattleState.allyHeroes)
+            {
+                if (ally.health > 0) continue;
+                float score = 0f;
+                if (ally.jobClass == HeroJobClass.Alchemist) score += 340f;
+                if (ally.jobClass == HeroJobClass.Monk)      score += 300f;
+                if (ally.jobClass == HeroJobClass.Rogue)     score += 280f;
+                score += ally.speed * 2f + ally.physicalAttack * 1.5f + ally.special * 1.5f;
+                if (score > bestScore) { bestScore = score; best = ally; }
+            }
+            return best;
+        }
+
+        private static Hero FindAllyWithAnyStatus(params StatusEffect[] statuses)
+        {
+            Hero best = null; float bestScore = float.MinValue;
+            foreach (Hero ally in LivingAllies())
+            {
+                if (!HasAnyStatus(ally, statuses)) continue;
+                float score = AllyValue(ally) + MissingHealth(ally) * 100f;
+                if (score > bestScore) { bestScore = score; best = ally; }
+            }
+            return best;
+        }
+
+        private static Hero FindLowestLivingAlly()
+        {
+            Hero best = null; float lowestRatio = float.MaxValue;
+            foreach (Hero ally in LivingAllies())
+            {
+                float ratio = HealthRatio(ally);
+                if (ratio < lowestRatio) { lowestRatio = ratio; best = ally; }
+            }
+            return best;
+        }
+
+        private static Hero FindPoisonedEmergencyTarget()
+        {
+            Hero best = null; float lowestRatio = float.MaxValue;
+            foreach (Hero ally in LivingAllies())
+            {
+                if (!HasStatus(ally, StatusEffect.Poison)) continue;
+                float ratio = HealthRatio(ally);
+                if (ratio < lowestRatio) { lowestRatio = ratio; best = ally; }
+            }
+            if (best == null) return null;
+            if (CountPoisonedAllies() >= 2) return best;
+            if (HealthRatio(best) <= PoisonDangerThreshold) return best;
+            return null;
+        }
+
+        private static Hero FindSilencedCoreAlly()
+        {
+            Hero alchemist = FindLivingAlly(HeroJobClass.Alchemist);
+            if (alchemist != null && HasStatus(alchemist, StatusEffect.Silence)) return alchemist;
+            Hero rogue = FindLivingAlly(HeroJobClass.Rogue);
+            if (rogue != null && HasStatus(rogue, StatusEffect.Silence)) return rogue;
+            return null;
+        }
+
+        private static Hero FindBestEtherTarget()
+        {
+            Hero alchemist = FindLivingAlly(HeroJobClass.Alchemist);
+            if (alchemist != null && ManaRatio(alchemist) <= LowMana) return alchemist;
+            Hero rogue = FindLivingAlly(HeroJobClass.Rogue);
+            if (rogue != null && ManaRatio(rogue) <= RogueLowMana) return rogue;
+            Hero monk = FindLivingAlly(HeroJobClass.Monk);
+            if (monk != null && ManaRatio(monk) <= RogueLowMana) return monk;
+            return null;
+        }
+
+        private static Hero FindLivingEnemy(HeroJobClass jobClass)
+        {
+            foreach (Hero enemy in LivingEnemies())
+                if (enemy.jobClass == jobClass) return enemy;
+            return null;
+        }
+
+        private static Hero FindLivingAlly(HeroJobClass jobClass)
+        {
+            foreach (Hero ally in LivingAllies())
+                if (ally.jobClass == jobClass) return ally;
+            return null;
+        }
+
+        private static int CountLivingEnemiesOfClass(HeroJobClass jobClass)
+        {
+            int count = 0;
+            foreach (Hero enemy in LivingEnemies())
+                if (enemy.jobClass == jobClass) count++;
+            return count;
+        }
+
+        private static int CountLivingAlliesBelow(float threshold)
+        {
+            int count = 0;
+            foreach (Hero ally in LivingAllies())
+                if (HealthRatio(ally) <= threshold) count++;
+            return count;
+        }
+
+        private static int CountPoisonedAllies()
+        {
+            int count = 0;
+            foreach (Hero ally in LivingAllies())
+                if (HasStatus(ally, StatusEffect.Poison)) count++;
+            return count;
+        }
+
+        private static bool IsSupportFight() =>
+            FindLivingEnemy(HeroJobClass.Cleric) != null || FindLivingEnemy(HeroJobClass.Alchemist) != null;
+
+        private static bool EnemyHasCasterSupport() =>
+            FindLivingEnemy(HeroJobClass.Cleric) != null
+            || FindLivingEnemy(HeroJobClass.Alchemist) != null
+            || FindLivingEnemy(HeroJobClass.Wizard) != null;
+
+        private static bool EnemyHasHeavyPhysicalPressure() =>
+            CountLivingEnemiesOfClass(HeroJobClass.Fighter) >= 2
+            || CountLivingEnemiesOfClass(HeroJobClass.Monk) >= 2
+            || (FindLivingEnemy(HeroJobClass.Fighter) != null && FindLivingEnemy(HeroJobClass.Monk) != null);
+
+        private static bool EnemyHasMagicPressure() =>
+            FindLivingEnemy(HeroJobClass.Cleric) != null
+            || FindLivingEnemy(HeroJobClass.Wizard) != null
+            || FindLivingEnemy(HeroJobClass.Alchemist) != null;
+
+        private static bool EnemyCanPetrify() => FindLivingEnemy(HeroJobClass.Wizard) != null;
+        private static bool EnemyCanSilence() => FindLivingEnemy(HeroJobClass.Rogue)  != null;
+        private static bool EnemyCanPoison()  =>
+            FindLivingEnemy(HeroJobClass.Rogue) != null || FindLivingEnemy(HeroJobClass.Wizard) != null;
+
+        private static bool NeedEmergencyStabilize()
+        {
+            if (CountLivingAlliesBelow(HeavyPressureHealth) >= 2) return true;
+            if (CountPoisonedAllies() >= 2) return true;
+            foreach (Hero ally in LivingAllies())
+            {
+                if (HasStatus(ally, StatusEffect.Doom))       return true;
+                if (HasStatus(ally, StatusEffect.Petrified))  return true;
+                if (HasStatus(ally, StatusEffect.Petrifying)) return true;
+                if (HasStatus(ally, StatusEffect.Silence))    return true;
+            }
+            return false;
+        }
+
+        private static bool TeamIsStable()
+        {
+            if (CountLivingAlliesBelow(LowHealth) > 0) return false;
+            if (CountPoisonedAllies() >= 2) return false;
+            foreach (Hero ally in LivingAllies())
+            {
+                if (HasStatus(ally, StatusEffect.Doom))       return false;
+                if (HasStatus(ally, StatusEffect.Petrified))  return false;
+                if (HasStatus(ally, StatusEffect.Petrifying)) return false;
+                if (HasStatus(ally, StatusEffect.Silence))    return false;
+            }
+            return true;
+        }
+
+        private static bool AnyAllyCanUse(Ability ability)
+        {
+            foreach (Hero ally in LivingAllies())
+                if (CanUse(ally, ability, ally)) return true;
+            return false;
+        }
+
+        private static bool ShouldCraftFullRemedy(Hero actor)
+        {
+            if (CountEssence() < 2) return false;
+            if (FindAllyWithAnyStatus(StatusEffect.Doom) != null && !AnyAllyCanUse(Ability.FullRemedy)) return true;
+            if (EnemyCanPetrify() && !AnyAllyCanUse(Ability.FullRemedy) && CountEssence() >= 6) return true;
+            return false;
+        }
+
+        private static bool TryAct(Hero actor, Ability ability, Hero target)
+        {
+            if (!CanUse(actor, ability, target)) return false;
+            Console.WriteLine($"{actor.jobClass} uses {ability} on {target.jobClass}");
+            TeamHeroCoder.PerformHeroAbility(ability, target);
+            return true;
+        }
+
+        private static bool TrySelfCast(Hero actor, Ability ability)
+        {
+            if (actor == null) return false;
+            if (!Utility.AreAbilityAndTargetLegal(ability, actor, false)) return false;
+            Console.WriteLine($"{actor.jobClass} uses {ability}");
+            TeamHeroCoder.PerformHeroAbility(ability, actor);
+            return true;
+        }
+
+        private static bool CanUse(Hero actor, Ability ability, Hero target)
+        {
+            if (actor == null || target == null) return false;
+            return Utility.AreAbilityAndTargetLegal(ability, target, false);
+        }
+
+        private static void Wait(Hero actor)
+        {
+            Console.WriteLine($"{actor.jobClass} waits");
+            TeamHeroCoder.PerformHeroAbility(Ability.Wait, actor);
+        }
+
+        private static IEnumerable<Hero> LivingAllies()
+        {
+            foreach (Hero ally in TeamHeroCoder.BattleState.allyHeroes)
+                if (ally.health > 0) yield return ally;
+        }
+
+        private static IEnumerable<Hero> LivingEnemies()
+        {
+            foreach (Hero enemy in TeamHeroCoder.BattleState.foeHeroes)
+                if (enemy.health > 0) yield return enemy;
+        }
+
+        private static float AllyValue(Hero ally)
+        {
+            float score = 0f;
+            if (ally.jobClass == HeroJobClass.Alchemist) score += 340f;
+            if (ally.jobClass == HeroJobClass.Monk)      score += 300f;
+            if (ally.jobClass == HeroJobClass.Rogue)     score += 280f;
+            score += ally.speed * 2f + ally.physicalAttack * 1.7f + ally.special * 1.6f + ally.mana * 0.35f;
+            return score;
+        }
+
+        private static float TargetPriorityBonus(HeroJobClass jobClass)
+        {
+            switch (jobClass)
+            {
+                case HeroJobClass.Cleric:    return 700f;
+                case HeroJobClass.Alchemist: return 550f;
+                case HeroJobClass.Wizard:    return 420f;
+                case HeroJobClass.Rogue:     return 300f;
+                case HeroJobClass.Monk:      return 240f;
+                case HeroJobClass.Fighter:   return 160f;
+                default:                     return 0f;
+            }
+        }
+
+        private static float HealthRatio(Hero hero)
+        {
+            if (hero == null || hero.maxHealth <= 0) return 1f;
+            return (float)hero.health / hero.maxHealth;
+        }
+
+        private static float ManaRatio(Hero hero)
+        {
+            if (hero == null || hero.maxMana <= 0) return 1f;
+            return (float)hero.mana / hero.maxMana;
+        }
+
+        private static float MissingHealth(Hero hero) => 1f - HealthRatio(hero);
+
+        private static bool HasAnyStatus(Hero hero, params StatusEffect[] statuses)
+        {
+            foreach (StatusEffect status in statuses)
+                if (HasStatus(hero, status)) return true;
+            return false;
+        }
+
+        private static bool HasStatus(Hero hero, StatusEffect status)
+        {
+            if (hero == null) return false;
+            foreach (StatusEffectAndDuration effect in hero.statusEffectsAndDurations)
+                if (effect.statusEffect == status) return true;
+            return false;
+        }
+
+        private static int CountEssence() => TeamHeroCoder.BattleState.allyEssenceCount;
+    }
+}
