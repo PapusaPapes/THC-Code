@@ -19,7 +19,7 @@ namespace PlayerCoder
     // Team: Rogue (Assassin+Bandit+Swashbuckler) / Wizard (Aberrant+Mastery+Evoker) / Cleric (3 perks)
     // Items: 3 Ether, 3 Silence Remedy, 3 Petrify Remedy, 3 Full Remedy
     // Core: Wizard Doom bypasses all healing. QuickDispel strips AutoLife.
-    // Special: Fight logic for Tough Stuff and Lmt Brk Crafter
+    // Special: Fight-specific logic for Tough Stuff and Lmt Brk Crafter
 
     public static class MyAI
     {
@@ -62,7 +62,7 @@ namespace PlayerCoder
             if (UseEmergencyItem(actor)) return;
             if (UseEther(actor, MP_ROGUE)) return;
 
-            // Lmt Brk Crafter focus entirely on killing Alchemist before it crafts
+            // Lmt Brk Crafter — focus entirely on killing Alchemist before it crafts
             if (IsLmtBrkCrafterLike())
             {
                 if (Act(actor, Ability.SilenceStrike, FindUnsilenced(HeroJobClass.Alchemist))) return;
@@ -79,7 +79,7 @@ namespace PlayerCoder
                 return;
             }
 
-            // Tough Stuff focus on Fighter to stop Resurrection/Cure Serious
+            // Tough Stuff — focus on Fighter to stop Resurrection/Cure Serious
             if (IsToughStuffLike())
             {
                 Hero fighter = FindLivingEnemy(HeroJobClass.Fighter);
@@ -96,7 +96,7 @@ namespace PlayerCoder
                 return;
             }
 
-            // silence casters, poison, attack
+            // Default — silence casters, poison, attack
             if (Act(actor, Ability.SilenceStrike, FindUnsilenced(HeroJobClass.Cleric)))    return;
             if (Act(actor, Ability.SilenceStrike, FindUnsilenced(HeroJobClass.Alchemist))) return;
             if (Act(actor, Ability.SilenceStrike, FindUnsilenced(HeroJobClass.Wizard)))    return;
@@ -125,7 +125,7 @@ namespace PlayerCoder
             foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
                 if (HasStatus(foe, StatusEffect.AutoLife) && Act(actor, Ability.QuickDispel, foe)) return;
 
-            // Lmt Brk Crafter burst Alchemist down with magic while Rogue silences it
+            // Lmt Brk Crafter — burst the Alchemist down with magic while Rogue silences it
             if (IsLmtBrkCrafterLike())
             {
                 Hero alchemist = FindLivingEnemy(HeroJobClass.Alchemist);
@@ -220,14 +220,10 @@ namespace PlayerCoder
             if (rogueAlly != null && HealthRatio(rogueAlly) <= HP_LIGHT)
                 if (Act(actor, Ability.CureLight, rogueAlly)) return;
 
-            // Wizard priority
+            // Wizard priority — heal aggressively in Tough Stuff to prevent one-shots
             Hero wizardAlly = FindLivingAlly(HeroJobClass.Wizard);
-            if (wizardAlly != null && HealthRatio(wizardAlly) <= HP_CRITICAL)
-            {
-                if (Act(actor, Ability.QuickHeal, wizardAlly)) return;
-                if (Act(actor, Ability.CureSerious, wizardAlly)) return;
-            }
-            if (wizardAlly != null && HealthRatio(wizardAlly) <= HP_LOW)
+            float wizardHealThreshold = IsToughStuffLike() ? 0.80f : HP_LOW;
+            if (wizardAlly != null && HealthRatio(wizardAlly) <= wizardHealThreshold)
             {
                 if (Act(actor, Ability.QuickHeal, wizardAlly)) return;
                 if (Act(actor, Ability.CureSerious, wizardAlly)) return;
@@ -248,7 +244,19 @@ namespace PlayerCoder
             if (poisonedAlly != null && HealthRatio(poisonedAlly) <= HP_LIGHT)
                 if (Act(actor, Ability.QuickCleanse, poisonedAlly)) return;
 
+            // In Tough Stuff, get AutoLife on Wizard ASAP — it gets one-shot by Monks
+            if (IsToughStuffLike() && wizardAlly != null && !HasStatus(wizardAlly, StatusEffect.AutoLife)
+                && HealthRatio(actor) >= 0.95f && CountBelow(HP_LOW) == 0)
+                if (Act(actor, Ability.AutoLife, wizardAlly)) return;
+
             if (!TeamIsStable() || HealthRatio(actor) < 0.95f) goto attack;
+
+            // Wizard AutoLife first in Tough Stuff — it keeps getting one-shot
+            if (IsToughStuffLike())
+            {
+                if (wizardAlly != null && !HasStatus(wizardAlly, StatusEffect.AutoLife)
+                    && Act(actor, Ability.AutoLife, wizardAlly)) return;
+            }
 
             if (rogueAlly != null && !HasStatus(rogueAlly, StatusEffect.AutoLife)
                 && Act(actor, Ability.AutoLife, rogueAlly)) return;
