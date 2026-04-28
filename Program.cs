@@ -21,9 +21,9 @@ namespace PlayerCoder
     // Items: 2 Ether, 42 Essence
     //
     // Strategy:
-    // - Wizard uses Doom as the main win condition.
-    // - Alchemist slows enemies, crafts items reactively, and supports the Wizard.
-    // - Cleric keeps the team alive and protects key allies.
+    // Wizard uses Doom as the main win condition.
+    // Alchemist slows enemies, crafts items reactively, and supports the Wizard.
+    // Cleric keeps the team alive and protects key allies.
 
     public static class MyAI
     {
@@ -39,14 +39,14 @@ namespace PlayerCoder
         // Mana thresholds
         private const float MpLow = 0.25f;
 
-        // Combat thresholds 
+        // Combat thresholds
         private const float FinishHp = 0.35f;
 
-        // Alchemist mana and essence costs 
-        private const int MinManaToSlow      = 15;
-        private const int EssenceCostTier1   = 2;  // Ether, Revive, Remedies
-        private const int EssenceCostTier2   = 3;  // Elixir
-        private const int EssenceCostTier3   = 4;  // Mega Elixir
+        // Alchemist mana and essence costs
+        private const int MinManaToSlow    = 15;
+        private const int EssenceCostTier1 = 2;  // Ether, Revive, Remedies
+        private const int EssenceCostTier2 = 3;  // Elixir
+        private const int EssenceCostTier3 = 4;  // Mega Elixir
 
         // Healers and crafters die first, tanks die last
         private static readonly HeroJobClass[] KillOrder =
@@ -105,14 +105,13 @@ namespace PlayerCoder
             HeroJobClass.Rogue
         };
 
-        // Used to check if the team is safe enough to apply buffs
+        // Only truly lethal debuffs count as dangerous 
+        // Slow and Silence are annoying but don't block buffing
         private static readonly StatusEffect[] DangerousDebuffs =
         {
             StatusEffect.Doom,
             StatusEffect.Petrified,
             StatusEffect.Petrifying,
-            StatusEffect.Slow,
-            StatusEffect.Silence,
             StatusEffect.Poison
         };
 
@@ -166,6 +165,7 @@ namespace PlayerCoder
             if (FinishMagicTarget(actor))                              return;
             if (Act(actor, Ability.MagicMissile, BestMagicTarget()))  return;
             if (Act(actor, Ability.Attack,        BestAttackTarget())) return;
+            if (Act(actor, Ability.Attack,        FirstLivingFoe()))   return;
 
             Wait(actor);
         }
@@ -196,16 +196,16 @@ namespace PlayerCoder
 
         private static void ControlAlchemist(Hero actor)
         {
-            if (SlowEnemyWizard(actor))        return;
+            if (SlowEnemyWizard(actor))          return;
             if (CleansePetrifyIfNoRemedy(actor)) return;
-            if (CleanseDoomIfNoRemedy(actor))   return;
+            if (CleanseDoomIfNoRemedy(actor))    return;
 
             if (UseEmergencyItem(actor)) return;
             if (UseEther(actor, MpLow))  return;
 
-            if (CraftVsWizard(actor))      return;
-            if (CraftNeededRemedy(actor))  return;
-            if (CraftSupportItems(actor))  return;
+            if (CraftVsWizard(actor))       return;
+            if (CraftNeededRemedy(actor))   return;
+            if (CraftSupportItems(actor))   return;
             if (ReviveOrCraftRevive(actor)) return;
 
             if (DispelEnemyAutoLife(actor, Ability.Dispel)) return;
@@ -221,7 +221,7 @@ namespace PlayerCoder
         // Slowing the enemy Wizard immediately delays its Doom and magic damage
         private static bool SlowEnemyWizard(Hero actor)
         {
-            if (actor.mana < MinManaToSlow)              return false;
+            if (actor.mana < MinManaToSlow)             return false;
             if (FindLivingFoe(HeroJobClass.Wizard) == null) return false;
 
             return Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Wizard));
@@ -231,9 +231,9 @@ namespace PlayerCoder
         {
             Hero petrified = FindAllyWithStatus(StatusEffect.Petrified, StatusEffect.Petrifying);
 
-            if (petrified == null)                    return false;
+            if (petrified == null)                     return false;
             if (AnyAllyHasItem(Ability.PetrifyRemedy)) return false;
-            if (AnyAllyHasItem(Ability.FullRemedy))   return false;
+            if (AnyAllyHasItem(Ability.FullRemedy))    return false;
 
             return Act(actor, Ability.Cleanse, petrified);
         }
@@ -248,10 +248,10 @@ namespace PlayerCoder
             return Act(actor, Ability.Cleanse, doomed);
         }
 
-        // When the enemy has a Wizard, craft Petrify and Full Remedies
+        // When the enemy has a Wizard, craft Petrify and Full Remedies proactively
         private static bool CraftVsWizard(Hero actor)
         {
-            if (!EnemyHasWizard())         return false;
+            if (!EnemyHasWizard())            return false;
             if (Essence() < EssenceCostTier1) return false;
 
             if (!AnyAllyHasItem(Ability.PetrifyRemedy) &&
@@ -337,11 +337,11 @@ namespace PlayerCoder
 
         private static void ControlCleric(Hero actor)
         {
-            if (ResurrectDeadAlly(actor))  return;
+            if (ResurrectDeadAlly(actor))   return;
             if (CleanseUrgentDebuffs(actor)) return;
-            if (RemoveOwnSilence(actor))   return;
-            if (UseEther(actor, MpLow))    return;
-            if (HealTeam(actor))           return;
+            if (RemoveOwnSilence(actor))    return;
+            if (UseEther(actor, MpLow))     return;
+            if (HealTeam(actor))            return;
             if (DispelEnemyAutoLife(actor, Ability.Dispel)) return;
 
             if (TeamIsStable() && HpRatio(actor) >= HpStableCleric)
@@ -350,7 +350,7 @@ namespace PlayerCoder
                 if (ApplyFaith(actor))    return;
             }
 
-            if (LightHealBeforeAttack(actor))               return;
+            if (LightHealBeforeAttack(actor))                   return;
             if (Act(actor, Ability.Attack, BestAttackTarget())) return;
 
             Wait(actor);
@@ -400,9 +400,9 @@ namespace PlayerCoder
         {
             if (CountBelow(HpLow) >= 2 && Act(actor, Ability.MassHeal, actor)) return true;
 
-            if (HealSelf(actor))    return true;
-            if (HealWizard(actor))  return true;
-            if (HealLowest(actor))  return true;
+            if (HealSelf(actor))            return true;
+            if (HealWizard(actor))          return true;
+            if (HealLowest(actor))          return true;
             if (CleansePoisonedAlly(actor)) return true;
 
             return false;
@@ -511,7 +511,7 @@ namespace PlayerCoder
             Hero doomed = FindAllyWithStatus(StatusEffect.Doom);
             if (doomed != null && Act(actor, Ability.FullRemedy, doomed)) return true;
 
-            // A silenced Wizard or Cleric cannot cast, spend a remedy
+            // A silenced Wizard or Cleric cannot cast worth spending a remedy immediately
             if (RemoveSilenceFromImportantCaster(actor)) return true;
 
             if (CountBelow(HpLow) >= 2 &&
@@ -608,7 +608,7 @@ namespace PlayerCoder
             return BestTarget(Ability.MagicMissile, ignoreCover: false);
         }
 
-        // Finds the highest priority living foe 
+        // Finds the highest priority living foe that can be targeted with the given ability
         private static Hero BestTarget(Ability ability, bool ignoreCover)
         {
             foreach (HeroJobClass jobClass in KillOrder)
@@ -655,7 +655,7 @@ namespace PlayerCoder
             return FindFoeWithout(jobClass, StatusEffect.Slow, Ability.Slow, ignoreCover: false);
         }
 
-        // find a foe of a given class
+        // Shared logic for finding a foe of a given class that does not have a given status
         private static Hero FindFoeWithout(
             HeroJobClass jobClass,
             StatusEffect status,
@@ -844,6 +844,15 @@ namespace PlayerCoder
         {
             return target != null &&
                    Utility.AreAbilityAndTargetLegal(ability, target, true);
+        }
+
+        // Returns any living foe regardless of cover or priority
+        private static Hero FirstLivingFoe()
+        {
+            foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
+                return foe;
+
+            return null;
         }
 
         private static void Wait(Hero actor)
