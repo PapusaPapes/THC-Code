@@ -23,7 +23,6 @@ namespace PlayerCoder
     // Rogue silences enemy healers and crafters to shut down their sustain.
     // Wizard uses Doom as the main win condition, with fight-specific overrides.
     // Cleric keeps the team alive and protects key allies.
-    // Fight overrides:
     // vs Lmt Brk Crafter: Rogue focuses Alchemist, Wizard bursts it with magic.
     // vs Tough Stuff: Rogue silences Fighter, Wizard uses Meteor AOE.
 
@@ -41,11 +40,11 @@ namespace PlayerCoder
         // Wizard is healed more aggressively in Tough Stuff to avoid being oneshot
         private const float HpWizardToughStuff = 0.80f;
 
-        // Mana thresholds 
+        // Mana thresholds
         private const float MpLow   = 0.25f;
         private const float MpRogue = 0.20f;
 
-        // Combat thresholds 
+        // Combat thresholds
         private const float FinishHp = 0.35f;
 
         // Healers and crafters die first
@@ -59,7 +58,7 @@ namespace PlayerCoder
             HeroJobClass.Fighter
         };
 
-        // Cleric keeps the team alive revive it first
+        // Cleric keeps the team alive, revive it first, Rogue last
         private static readonly HeroJobClass[] ReviveOrder =
         {
             HeroJobClass.Cleric,
@@ -67,7 +66,7 @@ namespace PlayerCoder
             HeroJobClass.Rogue
         };
 
-        // Cleric is most important to cleanse
+        // Cleric is most important to cleanse, it can't heal if debuffed
         private static readonly HeroJobClass[] CleanseOrder =
         {
             HeroJobClass.Cleric,
@@ -216,6 +215,7 @@ namespace PlayerCoder
             if (FinishMagicTarget(actor))                              return;
             if (Act(actor, Ability.MagicMissile, BestMagicTarget()))  return;
             if (Act(actor, Ability.Attack,        BestAttackTarget())) return;
+            if (Act(actor, Ability.Attack,        FirstLivingFoe()))   return;
 
             Wait(actor);
         }
@@ -276,16 +276,16 @@ namespace PlayerCoder
 
         private static void ControlCleric(Hero actor)
         {
-            if (ResurrectDeadAlly(actor))              return;
-            if (CleanseUrgentDebuffs(actor))           return;
-            if (RemoveOwnSilence(actor))               return;
-            if (UseEther(actor, MpLow))                return;
+            if (ResurrectDeadAlly(actor))                   return;
+            if (CleanseUrgentDebuffs(actor))                return;
+            if (RemoveOwnSilence(actor))                    return;
+            if (UseEther(actor, MpLow))                     return;
             if (HealTeam(actor))                            return;
             if (CleansePoisonedAlly(actor))                 return;
             if (GiveWizardAutoLifeEarlyInToughStuff(actor)) return;
             if (GiveClericAutoLifeIfNeeded(actor))          return;
             if (ApplyBuffsWhenStable(actor))                return;
-            if (LightHealBeforeAttack(actor))          return;
+            if (LightHealBeforeAttack(actor))               return;
 
             if (Act(actor, Ability.Attack, BestAttackTarget())) return;
 
@@ -381,7 +381,7 @@ namespace PlayerCoder
 
             if (wizard == null) return false;
 
-            // In Tough Stuff the Wizard gets oneshot easily heal at 80% instead of 55%
+            // In Tough Stuff the Wizard gets oneshot easily, heal at 80% instead of 55%
             float threshold = IsToughStuffLike() ? HpWizardToughStuff : HpLow;
 
             if (HpRatio(wizard) > threshold) return false;
@@ -420,7 +420,7 @@ namespace PlayerCoder
             return Act(actor, Ability.QuickCleanse, poisoned);
         }
 
-        // Tough Stuff Monks can oneshot the Wizard give AutoLife before the first hit lands
+        // Tough Stuff Monks can oneshot the Wizard, give AutoLife before the first hit lands
         private static bool GiveWizardAutoLifeEarlyInToughStuff(Hero actor)
         {
             if (!IsToughStuffLike()) return false;
@@ -433,7 +433,7 @@ namespace PlayerCoder
             return Act(actor, Ability.AutoLife, wizard);
         }
 
-        // Cleric is fragile give it AutoLife when healthy enough to spare a turn
+        // Cleric is fragile, give it AutoLife when healthy enough to spare a turn
         private static bool GiveClericAutoLifeIfNeeded(Hero actor)
         {
             if (HasStatus(actor, StatusEffect.AutoLife)) return false;
@@ -604,6 +604,7 @@ namespace PlayerCoder
             return BestTarget(Ability.MagicMissile, ignoreCover: false);
         }
 
+        // Finds the highest priority living foe that can be targeted with the given ability
         private static Hero BestTarget(Ability ability, bool ignoreCover)
         {
             foreach (HeroJobClass jobClass in KillOrder)
@@ -660,6 +661,7 @@ namespace PlayerCoder
             return FindFoeWithout(jobClass, StatusEffect.Slow, Ability.Slow, ignoreCover: false);
         }
 
+        // Shared logic for finding a foe of a given class that does not have a given status
         private static Hero FindFoeWithout(
             HeroJobClass jobClass,
             StatusEffect status,
@@ -747,7 +749,7 @@ namespace PlayerCoder
         // SITUATION DETECTION
         // ============================================================
 
-        // heavy sustain with stacks of remedies
+        // 2+ Monks + Fighter with no casters, heavy sustain with stacks of remedies
         private static bool IsToughStuffLike()
         {
             return CountEnemyClass(HeroJobClass.Monk)    >= 2 &&
@@ -757,7 +759,7 @@ namespace PlayerCoder
                    FindLivingFoe(HeroJobClass.Wizard)    == null;
         }
 
-        // Alchemist crafts infinite revives and heals
+        // 2+ Monks + Alchemistl, Alchemist crafts infinite revives and heals
         private static bool IsLmtBrkCrafterLike()
         {
             return CountEnemyClass(HeroJobClass.Monk)    >= 2 &&
@@ -824,6 +826,15 @@ namespace PlayerCoder
         {
             return target != null &&
                    Utility.AreAbilityAndTargetLegal(ability, target, true);
+        }
+
+        // Returns any living foe regardless of cover or priority
+        private static Hero FirstLivingFoe()
+        {
+            foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
+                return foe;
+
+            return null;
         }
 
         private static void Wait(Hero actor)
