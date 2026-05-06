@@ -20,10 +20,10 @@ namespace PlayerCoder
     // Team: Monk / Wizard / Alchemist
     // Items: 2 Ether, 42 Essence
     // Strategy:
-    // - Wizard opens with PoisonNova to poison all enemies.
-    // - Monk follows with FlurryOfBlows, Bitter Bloom amplifies damage on poisoned targets.
-    // - Alchemist slows enemies, hastes Monk, and crafts sustain reactively.
-    // - Wizard uses Doom as a fallback win condition when burst isn't enough.
+    // Wizard opens with PoisonNova to poison all enemies.
+    // Monk follows with FlurryOfBlows, Bitter Bloom amplifies damage on poisoned targets.
+    // Alchemist slows enemies, hastes Monk, and crafts sustain reactively.
+    // Wizard uses Doom as a fallback win condition when burst isn't enough.
 
     public static class MyAI
     {
@@ -58,7 +58,7 @@ namespace PlayerCoder
             HeroJobClass.Fighter
         };
 
-        // Cleric keeps the team alive, revive it first, Monk last
+        // Wizard is the win condition, revive it first, Monk last
         private static readonly HeroJobClass[] ReviveOrder =
         {
             HeroJobClass.Wizard,
@@ -253,7 +253,7 @@ namespace PlayerCoder
                 return;
             }
 
-            // Poison Tribal: no Full Remedies Doom is guaranteed, just survive the burst
+            // Poison Tribal: no Full Remedies, Doom is guaranteed, just survive the burst
             if (IsPoisonTribalLike())
             {
                 if (UseEmergencyItem(actor))                               return;
@@ -322,7 +322,7 @@ namespace PlayerCoder
 
         private static void ControlAlchemist(Hero actor)
         {
-            // Self preservation first, a dead Alchemist can't craft or revive
+            // Self-preservation first, a dead Alchemist can't craft or revive
             if (HpRatio(actor) <= HpLow && HealCriticalAlly(actor)) return;
 
             // Poison Tribal: skip everything except survival and Doom support
@@ -391,9 +391,6 @@ namespace PlayerCoder
             // Multiple enemy Wizards means Petrify spam, craft remedies before anything else
             if (CraftVsMultipleWizards(actor)) return;
 
-            // Poison Tribal: enemy Monks have Bitter Bloom, craft Poison Remedies early
-            if (CraftVsPoisonTribal(actor)) return;
-
             // Wizard is the win condition, heal it before anything else if low
             if (HealWizardUrgently(actor)) return;
 
@@ -426,8 +423,7 @@ namespace PlayerCoder
             Wait(actor);
         }
 
-        // Slowing the enemy Wizard immediately delays its Doom and magic damage
-        // Self-preservation,  Wizard is the win condition but a dead Alchemist loses the fight
+        // MegaElixir fully heals the team, use it reactively when anyone is critical
         private static bool HealCriticalAlly(Hero actor)
         {
             // MegaElixir fully heals everyone, use it whenever anyone is critical
@@ -530,7 +526,7 @@ namespace PlayerCoder
             return false;
         }
 
-        // Poison Tribal: 3 Monks with Bitter Bloom
+        // Poison Tribal: 3 Monks with Bitter Bloom, our poison hurts us too
         // craft Poison Remedies proactively to survive
         private static bool CraftVsPoisonTribal(Hero actor)
         {
@@ -941,14 +937,6 @@ namespace PlayerCoder
         private static bool IsMultiWizardLike()
         {
             return CountEnemyClass(HeroJobClass.Wizard) >= 2;
-        }
-
-        // Wizard + Rogue + Fighter, Rogue steals items and clears poison with Full Remedies
-        private static bool IsSlowBashLike()
-        {
-            return CountEnemyClass(HeroJobClass.Wizard)  >= 1 &&
-                   CountEnemyClass(HeroJobClass.Rogue)   >= 1 &&
-                   CountEnemyClass(HeroJobClass.Fighter) >= 1;
         }
 
         private static bool TeamIsStable()
