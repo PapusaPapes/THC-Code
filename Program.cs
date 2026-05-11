@@ -19,10 +19,9 @@ namespace PlayerCoder
 
     // Team: Rogue / Alchemist / Cleric
     // Items: 2 Ether, 42 Essence
-    //
     // Strategy:
     // Alchemist crafts Ethers and Elixirs to fuel the Rogue's Item Jockey passive.
-    // Rogue uses items to chain turns via Item Jockey (40% initiative refund per item used).
+    // Rogue uses items to chain turns with Item Jockey (40% initiative refund per item used).
     // Between item uses, Rogue Silences, Poisons, and Stunstrikes enemies.
     // Cleric keeps the team alive and stacks Faith and Haste on the Rogue.
 
@@ -41,7 +40,7 @@ namespace PlayerCoder
         private const float MpLow   = 0.25f;
         private const float MpRogue = 0.40f;
 
-        // Combat thresholds
+        // Combat thresholds 
         private const float FinishHp = 0.35f;
 
         // Alchemist essence costs
@@ -69,7 +68,7 @@ namespace PlayerCoder
             HeroJobClass.Rogue
         };
 
-        // Cleric is most important to cleanse, it can't heal if debuffed
+        // Cleric is most important to cleanse
         private static readonly HeroJobClass[] CleanseOrder =
         {
             HeroJobClass.Cleric,
@@ -121,10 +120,10 @@ namespace PlayerCoder
 
         private static void ControlRogue(Hero actor)
         {
-            // Emergency items first — can't chain turns if we're dead
+            // Emergency items first, can't chain turns if we're dead
             if (UseEmergencyItem(actor)) return;
 
-            // Use an Ether to chain a turn via Item Jockey if mana is low
+            // Use an Ether to chain a turn with Item Jockey if mana is low
             if (UseEtherOnSelf(actor, MpRogue)) return;
 
             // Use a healing item to chain a turn if we're low
@@ -145,11 +144,9 @@ namespace PlayerCoder
                 return;
             }
 
-            // Slow Bash: Silence Wizard, kill Fighter, kill Rogue, in that order
+            // Slow Bash: Silence Wizard, kill Fighter, kill Rogue in that order
             if (IsSlowBashLike())
             {
-                if (UseEtherOnSelf(actor, MpRogue))                              return;
-                if (UseHealingItemForTempo(actor))                               return;
                 if (SilenceWizardFirst(actor))                                   return;
 
                 // Kill Fighter first, stops Resurrection
@@ -190,7 +187,7 @@ namespace PlayerCoder
             Wait(actor);
         }
 
-        // Steal items from the enemy, cuts off their sustain supply chain
+        // Steal items from the enemy to cut off their sustain
         private static bool StealFromEnemy(Hero actor)
         {
             foreach (HeroJobClass jobClass in KillOrder)
@@ -205,7 +202,7 @@ namespace PlayerCoder
             return false;
         }
 
-        // Use a healing item when low to chain a turn via Item Jockey
+        // Use a healing item when low to chain turns with Item Jockey
         private static bool UseHealingItemForTempo(Hero actor)
         {
             if (HpRatio(actor) > HpLow) return false;
@@ -260,11 +257,9 @@ namespace PlayerCoder
 
             if (CraftNeededRemedy(actor))   return;
 
-            // Fight-specific proactive crafting
+            // Fight specific proactive crafting
             if (CraftVsMultipleWizards(actor)) return;
             if (CraftVsTrinityDoom(actor))     return;
-
-            if (UseEther(actor, MpLow))  return;
 
             // Prioritize crafting Ethers to fuel Rogue's Item Jockey chains
             if (CraftTempoItems(actor))     return;
@@ -680,11 +675,6 @@ namespace PlayerCoder
             return BestTarget(Ability.Attack, ignoreCover: true);
         }
 
-        private static Hero BestMagicTarget()
-        {
-            return BestTarget(Ability.MagicMissile, ignoreCover: false);
-        }
-
         // Finds the highest priority living foe that can be targeted with the given ability
         private static Hero BestTarget(Ability ability, bool ignoreCover)
         {
@@ -823,7 +813,7 @@ namespace PlayerCoder
         // SITUATION DETECTION
         // ============================================================
 
-        // 2+ enemy Wizards, Petrify spam, craft Petrify and Full Remedies proactively
+        // 2+ enemy Wizards, Petrify spam, craft Petrify and Full Remedies immediately
         private static bool CraftVsMultipleWizards(Hero actor)
         {
             if (CountEnemyClass(HeroJobClass.Wizard) < 2) return false;
@@ -850,7 +840,7 @@ namespace PlayerCoder
             return false;
         }
 
-        // 2 Alchemists + Monk, infinite sustain, need to steal their items
+        // 2 Alchemists + Monk, near infinite sustain, need to steal their items
         private static bool IsCtrlAndSustainLike()
         {
             return CountEnemyClass(HeroJobClass.Alchemist) >= 2 &&
@@ -958,7 +948,7 @@ namespace PlayerCoder
                    Utility.AreAbilityAndTargetLegal(ability, target, true);
         }
 
-        // Guaranteed fallback, returns any living foe regardless of cover or priority
+        // Fallback, returns any living foe regardless of cover or priority
         private static Hero FirstLivingFoe()
         {
             foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
