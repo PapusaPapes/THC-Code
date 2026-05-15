@@ -20,11 +20,10 @@ namespace PlayerCoder
     // Team: Fighter / Monk / Alchemist
     // Items: 2 Ether, 42 Essence
     // Strategy:
-    // - Fighter stacks Brave and Covers the Monk to keep it in Adrenaline range.
-    // - Monk stacks Brave and uses FlurryOfBlows as the primary damage dealer.
-    // - Adrenaline passive gives Monk 50% more damage below 51% HP.
-    // - Alchemist Slows enemies, Hastes Monk, and crafts sustain reactively.
-    // - Only heal the Monk when truly critical, Adrenaline is active below 51%.
+    // Fighter stacks Brave and uses Resurrection to support the team.
+    // Monk stacks Brave and uses FlurryOfBlows as the primary damage dealer.
+    // Adrenaline passive gives Monk 50% more damage below 51% HP.
+    // Alchemist Slows enemies, Hastes Monk, and crafts sustain reactively.
 
     public static class MyAI
     {
@@ -32,7 +31,7 @@ namespace PlayerCoder
             "C:/Users/rmatt/AppData/LocalLow/Ludus Ventus/Team Hero Coder";
 
         // Health thresholds
-        private const float HpCritical   = 0.20f;  // Monk dies below this — must heal
+        private const float HpCritical   = 0.20f;  // Monk dies below this must heal
         private const float HpLow        = 0.55f;
         private const float HpLight      = 0.75f;
 
@@ -238,7 +237,7 @@ namespace PlayerCoder
             if (UseEmergencyItem(actor)) return;
 
             // Only Brave when stable, don't waste tempo on setup turns under pressure
-            if (TeamIsStable() && !IsTrinityDoomLike() && ApplyBrave(actor)) return;
+            if (TeamIsStable() && ApplyBrave(actor)) return;
 
             // Lmt Brk Crafter: focus Alchemist every turn, drain their 6 Revives
             if (IsLmtBrkCrafterLike())
@@ -322,7 +321,7 @@ namespace PlayerCoder
 
         private static void ControlAlchemist(Hero actor)
         {
-            // Self-preservation first, dead Alchemist means no more crafting
+            // first, dead Alchemist means no more crafting
             if (HpRatio(actor) <= HpLight && HealCriticalAlly(actor)) return;
 
             // Ctrl & Sustain: 2 Alchemists + Monk, craft MegaElixir and use it to survive
@@ -370,7 +369,7 @@ namespace PlayerCoder
             {
                 if (UseEther(actor, MpLow)) return;
 
-                // Haste self only after we have a FullRemedy stocked, don't waste turn 1
+                // Haste self only after we have a FullRemedy stocked
                 if (!HasStatus(actor, StatusEffect.Haste) &&
                     AnyAllyHasItem(Ability.FullRemedy) &&
                     Act(actor, Ability.Haste, actor)) return;
@@ -510,16 +509,6 @@ namespace PlayerCoder
                    CountEnemyClass(HeroJobClass.Monk)    == 0;
         }
 
-        private static bool CraftVsTrinityDoom(Hero actor)
-        {
-            if (Essence() < EssenceCostTier1) return false;
-
-            if (!AnyAllyHasItem(Ability.FullRemedy) &&
-                SelfCast(actor, Ability.CraftFullRemedy)) return true;
-
-            return false;
-        }
-
         // 2+ enemy Wizards, Petrify spam, craft Petrify and Full Remedies proactively
         private static bool CraftVsMultipleWizards(Hero actor)
         {
@@ -630,7 +619,7 @@ namespace PlayerCoder
             Hero doomed = FindAllyWithStatus(StatusEffect.Doom);
             if (doomed != null && Act(actor, Ability.FullRemedy, doomed)) return true;
 
-            // Alchemist is the sustain engine, save it with MegaElixir
+            // Alchemist is the sustain engine, save it with MegaElixir if it's critical
             Hero alchemist = FindLivingAlly(HeroJobClass.Alchemist);
             if (alchemist != null && HpRatio(alchemist) <= HpCritical &&
                 SelfCast(actor, Ability.MegaElixir)) return true;
@@ -749,7 +738,7 @@ namespace PlayerCoder
             return FindFoeWithout(jobClass, StatusEffect.Slow, Ability.Slow, ignoreCover: false);
         }
 
-        // Shared logic for finding a foe of a given class that does not have a given status
+        // for finding a foe of a given class that does not have a given status
         private static Hero FindFoeWithout(
             HeroJobClass jobClass,
             StatusEffect status,
@@ -848,7 +837,6 @@ namespace PlayerCoder
         // SITUATION DETECTION
         // ============================================================
 
-        // 3 Wizards spam Doom, craft Full Remedies before anything else
         // 2 Monks + Alchemist, drain their Revive items by killing Alchemist repeatedly
         private static bool IsLmtBrkCrafterLike()
         {
