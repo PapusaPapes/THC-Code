@@ -20,9 +20,9 @@ namespace PlayerCoder
     // Team: Rogue / Monk / Cleric
     // Items: 3 Ether, 1 Silence Remedy, 5 Poison Remedy, 3 Petrify Remedy, 3 Full Remedy = 70g
     // Strategy:
-    // Monk is the primary damage dealer, Adrenaline passive gives 50% more damage below 51% HP.
-    // Rogue silences casters, poisons and stuns enemies to control the fight.
-    // Cleric sustains the team with heals, AutoLife, and Resurrects fallen allies.
+    // - Monk is the primary damage dealer, Adrenaline passive gives 50% more damage below 51% HP.
+    // - Rogue silences casters, poisons and stuns enemies to control the fight.
+    // - Cleric sustains the team with heals, AutoLife, and Resurrects fallen allies.
 
     public static class MyAI
     {
@@ -312,7 +312,6 @@ namespace PlayerCoder
             // Dispel enemy AutoLife before anything else, stops Cleric from reviving
             if (DispelEnemyAutoLife(actor, Ability.Dispel)) return;
 
-            // Poison Tribal: skip AutoLife, just keep everyone alive
             // Ctrl & Sustain: AutoLife when low, CureSerious to sustain
             if (IsCtrlAndSustainLike())
             {
@@ -348,14 +347,13 @@ namespace PlayerCoder
                 return;
             }
 
-            if (!IsPoisonTribalLike() && !IsTrinityDoomLike() && !IsCtrlAndSustainLike() && ApplyAutoLife(actor)) return;
+            if (ApplyAutoLife(actor)) return;
 
             if (CleanseUrgentDebuffs(actor)) return;
             if (RemoveOwnSilence(actor))     return;
             if (UseEther(actor, MpLow))      return;
             if (HealTeam(actor))             return;
             if (CleansePoisonedAlly(actor))  return;
-            if (DispelEnemyAutoLife(actor, Ability.Dispel)) return;
 
             if (!IsTrinityDoomLike() &&
                 !IsCtrlAndSustainLike() &&
@@ -438,7 +436,7 @@ namespace PlayerCoder
 
             if (lowest == null) return false;
 
-            // Don't overheal the Monk, Adrenaline is active below 51%
+            // Don't over heal the Monk, Adrenaline is active below 51%
             if (lowest.jobClass == HeroJobClass.Monk && HpRatio(lowest) > HpCritical)
                 return false;
 
@@ -505,7 +503,7 @@ namespace PlayerCoder
             if (lowest == null)            return false;
             if (HpRatio(lowest) > HpLight) return false;
 
-            // Don't overheal Monk out of Adrenaline range
+            // Don't over heal Monk out of Adrenaline range
             if (lowest.jobClass == HeroJobClass.Monk) return false;
 
             return Act(actor, Ability.CureLight, lowest);
@@ -744,7 +742,7 @@ namespace PlayerCoder
             return CountEnemyClass(HeroJobClass.Alchemist) >= 2;
         }
 
-        // Fighter + Cleric + Wizard, Wizard spams Doom
+        // Fighter + Cleric + Wizard — Wizard spams Doom
         private static bool IsTrinityDoomLike()
         {
             return CountEnemyClass(HeroJobClass.Wizard)  >= 1 &&
