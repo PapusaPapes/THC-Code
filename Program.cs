@@ -17,12 +17,12 @@ namespace PlayerCoder
         }
     }
 
-    // Team: Wizard / Monk / Cleric
-    // Items: 3 Ether, 1 Silence Remedy, 5 Poison Remedy, 3 Petrify Remedy, 3 Full Remedy = 70g
+    // Team: Wizard / Rogue / Alchemist
+    // Items: 2 Ether, 42 Essence
     // Strategy:
-    // Wizard opens with PoisonNova, then Dooms priority targets.
-    // Monk follows with FlurryOfBlows, Bitter Bloom amplifies damage on poisoned targets.
-    // Cleric sustains the team with heals, AutoLife, and cleanses debuffs.
+    // Wizard PoisonNovas then Dooms all targets on a timer.
+    // Rogue silences casters, poisons, stuns, and steals items.
+    // Alchemist crafts Ethers, MegaElixirs, and remedies to sustain the team.
 
     public static class MyAI
     {
@@ -30,16 +30,22 @@ namespace PlayerCoder
             "C:/Users/rmatt/AppData/LocalLow/Ludus Ventus/Team Hero Coder";
 
         // Health thresholds
-        private const float HpCritical     = 0.30f;
-        private const float HpLow          = 0.55f;
-        private const float HpLight        = 0.75f;
-        private const float HpStableCleric = 0.95f;
+        private const float HpCritical = 0.30f;
+        private const float HpLow      = 0.55f;
+        private const float HpLight    = 0.75f;
 
         // Mana thresholds
-        private const float MpLow = 0.25f;
+        private const float MpLow   = 0.25f;
+        private const float MpRogue = 0.20f;
 
         // Combat thresholds
         private const float FinishHp = 0.35f;
+
+        // Alchemist essence costs
+        private const int EssenceCostTier1 = 2;
+        private const int EssenceCostTier2 = 3;
+        private const int EssenceCostTier3 = 4;
+        private const int MinManaToSlow    = 15;
 
         private static readonly HeroJobClass[] KillOrder =
         {
@@ -53,16 +59,16 @@ namespace PlayerCoder
 
         private static readonly HeroJobClass[] ReviveOrder =
         {
-            HeroJobClass.Cleric,
+            HeroJobClass.Alchemist,
             HeroJobClass.Wizard,
-            HeroJobClass.Monk
+            HeroJobClass.Rogue
         };
 
         private static readonly HeroJobClass[] CleanseOrder =
         {
             HeroJobClass.Wizard,
-            HeroJobClass.Monk,
-            HeroJobClass.Cleric
+            HeroJobClass.Alchemist,
+            HeroJobClass.Rogue
         };
 
         private static readonly StatusEffect[] DangerousDebuffs =
@@ -88,12 +94,12 @@ namespace PlayerCoder
                     ControlWizard(actor);
                     return;
 
-                case HeroJobClass.Monk:
-                    ControlMonk(actor);
+                case HeroJobClass.Rogue:
+                    ControlRogue(actor);
                     return;
 
-                case HeroJobClass.Cleric:
-                    ControlCleric(actor);
+                case HeroJobClass.Alchemist:
+                    ControlAlchemist(actor);
                     return;
 
                 default:
@@ -113,32 +119,7 @@ namespace PlayerCoder
 
             if (DispelEnemyAutoLife(actor, Ability.QuickDispel)) return;
 
-            // Ctrl & Sustain: PoisonNova for Bitterbloom, then blast
-            if (IsCtrlAndSustainLike())
-            {
-                if (CountUnpoisonedFoes() > 0 &&
-                    Act(actor, Ability.PoisonNova, BestMagicTarget()))    return;
-                if (FinishMagicTarget(actor))                             return;
-                if (Act(actor, Ability.MagicMissile, BestMagicTarget())) return;
-                if (Act(actor, Ability.Attack,        BestAttackTarget())) return;
-                if (Act(actor, Ability.Attack,        FirstLivingFoe()))   return;
-                Wait(actor);
-                return;
-            }
-
-            // Poison Tribal: Doom all Monks
-            if (IsPoisonTribalLike())
-            {
-                if (DoomAllTargets(actor))                                return;
-                if (FinishMagicTarget(actor))                             return;
-                if (Act(actor, Ability.MagicMissile, BestMagicTarget())) return;
-                if (Act(actor, Ability.Attack,        BestAttackTarget())) return;
-                if (Act(actor, Ability.Attack,        FirstLivingFoe()))   return;
-                Wait(actor);
-                return;
-            }
-
-            // PoisonNova first, sets up Bitter Bloom for the Monk
+            // PoisonNova first, sets up Rogue poison synergy
             if (CountUnpoisonedFoes() > 0 &&
                 Act(actor, Ability.PoisonNova, BestMagicTarget())) return;
 
@@ -193,208 +174,153 @@ namespace PlayerCoder
         }
 
         // ============================================================
-        // MONK
+        // ROGUE
         // ============================================================
 
-        private static void ControlMonk(Hero actor)
+        private static void ControlRogue(Hero actor)
         {
-            if (UseEmergencyItem(actor)) return;
+            if (UseEmergencyItem(actor))  return;
+            if (UseEther(actor, MpRogue)) return;
 
-            // Ctrl & Sustain: wait for PoisonNova then FlurryOfBlows for Bitterbloom
-            if (IsCtrlAndSustainLike())
-            {
-                Hero alchemist = FindLivingFoe(HeroJobClass.Alchemist);
-                // Only FlurryOfBlows when enemies are poisoned, maximize Bitterbloom
-                if (alchemist != null && CountUnpoisonedFoes() == 0 &&
-                    Act(actor, Ability.FlurryOfBlows, alchemist)) return;
-                if (FinishPhysicalTarget(actor))                   return;
-                if (alchemist != null && Act(actor, Ability.Attack, alchemist)) return;
-                if (Act(actor, Ability.Attack, BestAttackTarget()))             return;
-                Wait(actor);
-                return;
-            }
+            // Silence casters first
+            if (Act(actor, Ability.SilenceStrike, FindUnsilenced(HeroJobClass.Cleric)))    return;
+            if (Act(actor, Ability.SilenceStrike, FindUnsilenced(HeroJobClass.Alchemist))) return;
+            if (Act(actor, Ability.SilenceStrike, FindUnsilenced(HeroJobClass.Wizard)))    return;
 
-            if (TeamIsStable() && ApplyBrave(actor)) return;
+            if (FinishPhysicalTarget(actor)) return;
 
-            if (Act(actor, Ability.FlurryOfBlows, BestAttackTarget())) return;
+            // Poison high priority targets
+            if (Act(actor, Ability.PoisonStrike, FindUnpoisoned(HeroJobClass.Cleric)))    return;
+            if (Act(actor, Ability.PoisonStrike, FindUnpoisoned(HeroJobClass.Alchemist))) return;
+            if (Act(actor, Ability.PoisonStrike, FindUnpoisoned(HeroJobClass.Wizard)))    return;
+            if (Act(actor, Ability.PoisonStrike, FindUnpoisoned(HeroJobClass.Fighter)))   return;
+            if (Act(actor, Ability.PoisonStrike, FindUnpoisoned(HeroJobClass.Monk)))      return;
 
-            if (DebraveThreats(actor)) return;
-            if (DefaithThreats(actor)) return;
-
-            if (FinishPhysicalTarget(actor))                    return;
-            if (Act(actor, Ability.Attack, BestAttackTarget())) return;
-            if (Act(actor, Ability.Attack, FirstLivingFoe()))   return;
+            if (Act(actor, Ability.StunStrike, BestAttackTarget())) return;
+            if (Act(actor, Ability.Attack,     BestAttackTarget())) return;
+            if (Act(actor, Ability.Attack,     FirstLivingFoe()))   return;
 
             Wait(actor);
         }
 
-        private static bool ApplyBrave(Hero actor)
-        {
-            if (HasStatus(actor, StatusEffect.Brave)) return false;
-            return Act(actor, Ability.Brave, actor);
-        }
-
-        private static bool DebraveThreats(Hero actor)
-        {
-            if (Act(actor, Ability.Debrave, FindWithoutDebrave(HeroJobClass.Fighter))) return true;
-            if (Act(actor, Ability.Debrave, FindWithoutDebrave(HeroJobClass.Monk)))    return true;
-            if (Act(actor, Ability.Debrave, FindWithoutDebrave(HeroJobClass.Rogue)))   return true;
-            return false;
-        }
-
-        private static bool DefaithThreats(Hero actor)
-        {
-            if (Act(actor, Ability.Defaith, FindWithoutDefaith(HeroJobClass.Wizard)))    return true;
-            if (Act(actor, Ability.Defaith, FindWithoutDefaith(HeroJobClass.Cleric)))    return true;
-            if (Act(actor, Ability.Defaith, FindWithoutDefaith(HeroJobClass.Alchemist))) return true;
-            return false;
-        }
-
         // ============================================================
-        // CLERIC
+        // ALCHEMIST
         // ============================================================
 
-        private static void ControlCleric(Hero actor)
+        private static void ControlAlchemist(Hero actor)
         {
-            if (ResurrectDeadAlly(actor))    return;
-            if (ApplyAutoLife(actor))        return;
-            if (CleanseUrgentDebuffs(actor)) return;
-            if (RemoveOwnSilence(actor))     return;
-            if (UseEther(actor, MpLow))      return;
-            if (HealTeam(actor))             return;
-            if (CleansePoisonedAlly(actor))  return;
+            if (HpRatio(actor) <= HpLight && HealCriticalAlly(actor)) return;
+
+            if (UseEmergencyItem(actor)) return;
+            if (UseEther(actor, MpLow))  return;
+
+            if (CleansePetrifyIfNoRemedy(actor)) return;
+            if (CleanseDoomIfNoRemedy(actor))    return;
+
+            if (CraftNeededRemedy(actor))   return;
+            if (ReviveOrCraftRevive(actor)) return;
+            if (CraftSupportItems(actor))   return;
+
             if (DispelEnemyAutoLife(actor, Ability.Dispel)) return;
 
-            if (!IsCtrlAndSustainLike() && !IsPoisonTribalLike() &&
-                TeamIsStable() && HpRatio(actor) >= HpStableCleric)
-            {
-                if (ApplyBuffs(actor)) return;
-            }
+            if (actor.mana >= MinManaToSlow && SlowAllTargets(actor)) return;
 
-            if (LightHealBeforeAttack(actor))                   return;
             if (Act(actor, Ability.Attack, BestAttackTarget())) return;
 
             Wait(actor);
         }
 
-        private static bool ResurrectDeadAlly(Hero actor)
+        private static bool CleansePetrifyIfNoRemedy(Hero actor)
         {
-            foreach (HeroJobClass jobClass in ReviveOrder)
+            Hero petrified = FindAllyWithStatus(StatusEffect.Petrified, StatusEffect.Petrifying);
+            if (petrified == null)                     return false;
+            if (AnyAllyHasItem(Ability.PetrifyRemedy)) return false;
+            if (AnyAllyHasItem(Ability.FullRemedy))    return false;
+            return Act(actor, Ability.Cleanse, petrified);
+        }
+
+        private static bool CleanseDoomIfNoRemedy(Hero actor)
+        {
+            Hero doomed = FindAllyWithStatus(StatusEffect.Doom);
+            if (doomed == null)                     return false;
+            if (AnyAllyHasItem(Ability.FullRemedy)) return false;
+            return Act(actor, Ability.Cleanse, doomed);
+        }
+
+        private static bool CraftNeededRemedy(Hero actor)
+        {
+            if (Essence() < EssenceCostTier1) return false;
+
+            if (FindAllyWithStatus(StatusEffect.Petrified, StatusEffect.Petrifying) != null &&
+                !AnyAllyHasItem(Ability.PetrifyRemedy) &&
+                SelfCast(actor, Ability.CraftPetrifyRemedy)) return true;
+
+            if (FindAllyWithStatus(StatusEffect.Doom) != null &&
+                !AnyAllyHasItem(Ability.FullRemedy) &&
+                SelfCast(actor, Ability.CraftFullRemedy)) return true;
+
+            if (FindAllyWithStatus(StatusEffect.Silence) != null &&
+                !AnyAllyHasItem(Ability.SilenceRemedy) &&
+                SelfCast(actor, Ability.CraftSilenceRemedy)) return true;
+
+            return false;
+        }
+
+        private static bool CraftSupportItems(Hero actor)
+        {
+            if (CountBelow(HpLow) >= 2 &&
+                Essence() >= EssenceCostTier3 &&
+                !AnyAllyHasItem(Ability.MegaElixir) &&
+                SelfCast(actor, Ability.CraftMegaElixir)) return true;
+
+            if (Essence() >= EssenceCostTier1 &&
+                !AnyAllyHasItem(Ability.Ether) &&
+                SelfCast(actor, Ability.CraftEther)) return true;
+
+            if (Essence() >= EssenceCostTier2 &&
+                !AnyAllyHasItem(Ability.Elixir) &&
+                !AnyAllyHasItem(Ability.MegaElixir) &&
+                SelfCast(actor, Ability.CraftElixir)) return true;
+
+            if (Essence() >= EssenceCostTier3 &&
+                !AnyAllyHasItem(Ability.MegaElixir) &&
+                AnyAllyHasItem(Ability.Elixir) &&
+                SelfCast(actor, Ability.CraftMegaElixir)) return true;
+
+            return false;
+        }
+
+        private static bool ReviveOrCraftRevive(Hero actor)
+        {
+            Hero dead = BestDeadAlly();
+            if (dead == null) return false;
+
+            if (Essence() >= EssenceCostTier1 &&
+                !AnyAllyHasItem(Ability.Revive) &&
+                SelfCast(actor, Ability.CraftRevive)) return true;
+
+            return Act(actor, Ability.Revive, dead);
+        }
+
+        private static bool HealCriticalAlly(Hero actor)
+        {
+            if (CountBelow(HpCritical) > 0 &&
+                SelfCast(actor, Ability.MegaElixir)) return true;
+
+            if (HpRatio(actor) <= HpLow)
             {
-                Hero dead = FindDeadAlly(jobClass);
-                if (dead != null && Act(actor, Ability.Resurrection, dead)) return true;
+                if (Act(actor, Ability.Elixir, actor)) return true;
+                if (Act(actor, Ability.Potion, actor)) return true;
             }
-            return false;
-        }
 
-        private static bool CleanseUrgentDebuffs(Hero actor)
-        {
-            foreach (HeroJobClass jobClass in CleanseOrder)
-            {
-                Hero ally = FindLivingAlly(jobClass);
-                if (ally == null) continue;
-
-                if (HasStatus(ally, StatusEffect.Petrified) ||
-                    HasStatus(ally, StatusEffect.Petrifying))
-                    if (Act(actor, Ability.QuickCleanse, ally)) return true;
-
-                if (HasStatus(ally, StatusEffect.Doom) &&
-                    Act(actor, Ability.QuickCleanse, ally)) return true;
-            }
-            return false;
-        }
-
-        private static bool RemoveOwnSilence(Hero actor)
-        {
-            if (!HasStatus(actor, StatusEffect.Silence)) return false;
-            if (Act(actor, Ability.SilenceRemedy, actor)) return true;
-            if (Act(actor, Ability.FullRemedy,    actor)) return true;
-            return false;
-        }
-
-        private static bool HealTeam(Hero actor)
-        {
-            if (CountBelow(HpLow) >= 2 && Act(actor, Ability.MassHeal, actor)) return true;
-            if (HealSelf(actor))   return true;
-            if (HealLowest(actor)) return true;
-            return false;
-        }
-
-        private static bool HealSelf(Hero actor)
-        {
-            if (HpRatio(actor) > HpLight) return false;
-            if (Act(actor, Ability.QuickHeal,   actor)) return true;
-            if (Act(actor, Ability.CureSerious, actor)) return true;
-            return false;
-        }
-
-        private static bool HealLowest(Hero actor)
-        {
             Hero lowest = LowestAlly();
-            if (lowest == null) return false;
-
-            // Don't over heal Monk, Adrenaline is active below 51%
-            if (lowest.jobClass == HeroJobClass.Monk && HpRatio(lowest) > HpCritical)
-                return false;
-
-            if (HpRatio(lowest) <= HpCritical)
+            if (lowest != null && HpRatio(lowest) <= HpCritical)
             {
-                if (Act(actor, Ability.QuickHeal,   lowest)) return true;
-                if (Act(actor, Ability.CureSerious, lowest)) return true;
+                if (Act(actor, Ability.Elixir, lowest)) return true;
+                if (Act(actor, Ability.Potion, lowest)) return true;
             }
 
-            if (HpRatio(lowest) <= HpLow &&
-                Act(actor, Ability.CureSerious, lowest)) return true;
-
             return false;
-        }
-
-        private static bool CleansePoisonedAlly(Hero actor)
-        {
-            Hero poisoned = FindAllyWithStatus(StatusEffect.Poison);
-            if (poisoned == null)            return false;
-            if (HpRatio(poisoned) > HpLight) return false;
-            return Act(actor, Ability.QuickCleanse, poisoned);
-        }
-
-        private static bool ApplyAutoLife(Hero actor)
-        {
-            foreach (HeroJobClass jobClass in ReviveOrder)
-            {
-                Hero ally = jobClass == actor.jobClass
-                    ? actor
-                    : FindLivingAlly(jobClass);
-
-                if (ally != null &&
-                    !HasStatus(ally, StatusEffect.AutoLife) &&
-                    Act(actor, Ability.AutoLife, ally)) return true;
-            }
-            return false;
-        }
-
-        private static bool ApplyBuffs(Hero actor)
-        {
-            Hero monk = FindLivingAlly(HeroJobClass.Monk);
-            if (monk != null && !HasStatus(monk, StatusEffect.Haste) &&
-                Act(actor, Ability.Haste, monk)) return true;
-
-            Hero wizard = FindLivingAlly(HeroJobClass.Wizard);
-            if (wizard != null && !HasStatus(wizard, StatusEffect.Faith) &&
-                Act(actor, Ability.Faith, wizard)) return true;
-
-            if (!HasStatus(actor, StatusEffect.Faith) &&
-                Act(actor, Ability.Faith, actor)) return true;
-
-            return false;
-        }
-
-        private static bool LightHealBeforeAttack(Hero actor)
-        {
-            Hero lowest = LowestAlly();
-            if (lowest == null)            return false;
-            if (HpRatio(lowest) > HpLight) return false;
-            if (lowest.jobClass == HeroJobClass.Monk) return false;
-            return Act(actor, Ability.CureLight, lowest);
         }
 
         // ============================================================
@@ -409,6 +335,13 @@ namespace PlayerCoder
 
             Hero doomed = FindAllyWithStatus(StatusEffect.Doom);
             if (doomed != null && Act(actor, Ability.FullRemedy, doomed)) return true;
+
+            Hero alchemist = FindLivingAlly(HeroJobClass.Alchemist);
+            if (alchemist != null && HpRatio(alchemist) <= HpCritical &&
+                SelfCast(actor, Ability.MegaElixir)) return true;
+
+            if (CountBelow(HpLow) >= 2 &&
+                SelfCast(actor, Ability.MegaElixir)) return true;
 
             Hero dead = BestDeadAlly();
             if (dead != null && Act(actor, Ability.Revive, dead)) return true;
@@ -425,20 +358,14 @@ namespace PlayerCoder
 
         private static bool UseEther(Hero actor, float threshold)
         {
-            // In Ctrl & Sustain only the Wizard needs mana, keep Doom going
-            if (IsCtrlAndSustainLike())
-            {
-                Hero wizard = FindLivingAlly(HeroJobClass.Wizard);
-                if (wizard != null && MpRatio(wizard) <= threshold)
-                    return Act(actor, Ability.Ether, wizard);
-                return false;
-            }
-
             Hero target    = null;
             float lowestMp = threshold + 0.001f;
 
             foreach (Hero ally in Living(TeamHeroCoder.BattleState.allyHeroes))
             {
+                // Rogue doesn't need mana, skip it
+                if (ally.jobClass == HeroJobClass.Rogue) continue;
+
                 float mp = MpRatio(ally);
                 if (mp >= lowestMp) continue;
                 lowestMp = mp;
@@ -495,14 +422,14 @@ namespace PlayerCoder
         // TARGET FINDERS
         // ============================================================
 
-        private static Hero FindWithoutDebrave(HeroJobClass jobClass)
+        private static Hero FindUnsilenced(HeroJobClass jobClass)
         {
-            return FindFoeWithout(jobClass, StatusEffect.Debrave, Ability.Debrave, ignoreCover: false);
+            return FindFoeWithout(jobClass, StatusEffect.Silence, Ability.SilenceStrike, ignoreCover: false);
         }
 
-        private static Hero FindWithoutDefaith(HeroJobClass jobClass)
+        private static Hero FindUnpoisoned(HeroJobClass jobClass)
         {
-            return FindFoeWithout(jobClass, StatusEffect.Defaith, Ability.Defaith, ignoreCover: false);
+            return FindFoeWithout(jobClass, StatusEffect.Poison, Ability.PoisonStrike, ignoreCover: false);
         }
 
         private static Hero FindUndoomed(HeroJobClass jobClass)
@@ -601,27 +528,19 @@ namespace PlayerCoder
         // SITUATION DETECTION
         // ============================================================
 
-        // 2 Alchemists + Monk
-        private static bool IsCtrlAndSustainLike()
-        {
-            return CountEnemyClass(HeroJobClass.Alchemist) >= 2;
-        }
-
-        // 3+ Monks + Wizard
-        private static bool IsPoisonTribalLike()
-        {
-            return CountEnemyClass(HeroJobClass.Monk)      >= 2 &&
-                   CountEnemyClass(HeroJobClass.Alchemist) == 0 &&
-                   CountEnemyClass(HeroJobClass.Fighter)   == 0 &&
-                   CountEnemyClass(HeroJobClass.Cleric)    == 0;
-        }
-
         private static bool TeamIsStable()
         {
             if (CountBelow(HpLow) > 0) return false;
             foreach (Hero ally in Living(TeamHeroCoder.BattleState.allyHeroes))
                 if (HasAnyStatus(ally, DangerousDebuffs)) return false;
             return true;
+        }
+
+        private static bool AnyAllyHasItem(Ability ability)
+        {
+            foreach (Hero ally in Living(TeamHeroCoder.BattleState.allyHeroes))
+                if (Utility.AreAbilityAndTargetLegal(ability, ally, false)) return true;
+            return false;
         }
 
         private static int CountBelow(float hpThreshold)
@@ -648,6 +567,11 @@ namespace PlayerCoder
             return count;
         }
 
+        private static int Essence()
+        {
+            return TeamHeroCoder.BattleState.allyEssenceCount;
+        }
+
         // ============================================================
         // CORE HELPERS
         // ============================================================
@@ -658,6 +582,15 @@ namespace PlayerCoder
             if (!Utility.AreAbilityAndTargetLegal(ability, target, false)) return false;
             Console.WriteLine($"{actor.jobClass} uses {ability} on {target.jobClass}");
             TeamHeroCoder.PerformHeroAbility(ability, target);
+            return true;
+        }
+
+        private static bool SelfCast(Hero actor, Ability ability)
+        {
+            if (actor == null)                                             return false;
+            if (!Utility.AreAbilityAndTargetLegal(ability, actor, false)) return false;
+            Console.WriteLine($"{actor.jobClass} uses {ability}");
+            TeamHeroCoder.PerformHeroAbility(ability, actor);
             return true;
         }
 
