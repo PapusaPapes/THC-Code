@@ -19,7 +19,6 @@ namespace PlayerCoder
 
     // Team: Wizard / Rogue / Alchemist
     // Items: 2 Ether, 42 Essence
-    //
     // Strategy:
     // Wizard PoisonNovas then Dooms all targets on a timer.
     // Rogue silences casters, poisons, stuns, and steals items.
