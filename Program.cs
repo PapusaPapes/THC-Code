@@ -19,6 +19,7 @@ namespace PlayerCoder
 
     // Team: Wizard / Rogue / Alchemist
     // Items: 2 Ether, 42 Essence
+    //
     // Strategy:
     // Wizard PoisonNovas then Dooms all targets on a timer.
     // Rogue silences casters, poisons, stuns, and steals items.
@@ -69,14 +70,6 @@ namespace PlayerCoder
             HeroJobClass.Wizard,
             HeroJobClass.Alchemist,
             HeroJobClass.Rogue
-        };
-
-        private static readonly StatusEffect[] DangerousDebuffs =
-        {
-            StatusEffect.Doom,
-            StatusEffect.Petrified,
-            StatusEffect.Petrifying,
-            StatusEffect.Poison
         };
 
         public static void ProcessAI()
@@ -517,24 +510,9 @@ namespace PlayerCoder
             return null;
         }
 
-        private static Hero FindLivingFoe(HeroJobClass jobClass)
-        {
-            foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
-                if (foe.jobClass == jobClass) return foe;
-            return null;
-        }
-
         // ============================================================
         // SITUATION DETECTION
         // ============================================================
-
-        private static bool TeamIsStable()
-        {
-            if (CountBelow(HpLow) > 0) return false;
-            foreach (Hero ally in Living(TeamHeroCoder.BattleState.allyHeroes))
-                if (HasAnyStatus(ally, DangerousDebuffs)) return false;
-            return true;
-        }
 
         private static bool AnyAllyHasItem(Ability ability)
         {
@@ -556,14 +534,6 @@ namespace PlayerCoder
             int count = 0;
             foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
                 if (!HasStatus(foe, StatusEffect.Poison)) count++;
-            return count;
-        }
-
-        private static int CountEnemyClass(HeroJobClass jobClass)
-        {
-            int count = 0;
-            foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
-                if (foe.jobClass == jobClass) count++;
             return count;
         }
 
