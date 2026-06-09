@@ -18,7 +18,7 @@ namespace PlayerCoder
     }
 
     // Team: Fighter / Wizard / Alchemist
-    // Items: 2 Ether, 4 Full Remedy, 37 Essence
+    // Items: 2 Ether, 1 Full Remedy, 37 Essence
     // Strategy:
     // Fighter stacks Brave and uses Resurrection to revive fallen allies.
     // Wizard PoisonNovas then Dooms all targets on a timer.
@@ -42,7 +42,6 @@ namespace PlayerCoder
 
         // Alchemist essence costs
         private const int EssenceCostTier1 = 2;
-        private const int EssenceCostTier2 = 3;
         private const int EssenceCostTier3 = 4;
         private const int MinManaToSlow    = 15;
 
@@ -70,16 +69,8 @@ namespace PlayerCoder
             HeroJobClass.Fighter
         };
 
-        // Cycle: craft 5 FullRemedies then 1 MegaElixir in Trinity Doom
+        // Cycle: craft 4 FullRemedies then 1 MegaElixir in Trinity Doom
         private static int trinityDoomCycleStep = 0;
-
-        private static readonly StatusEffect[] DangerousDebuffs =
-        {
-            StatusEffect.Doom,
-            StatusEffect.Petrified,
-            StatusEffect.Petrifying,
-            StatusEffect.Poison
-        };
 
         public static void ProcessAI()
         {
@@ -122,7 +113,6 @@ namespace PlayerCoder
             if (IsTrinityDoomLike())
             {
                 if (ResurrectDeadAlly(actor))  return;
-                // Cleanse urgent Doom if Alchemist can't get there in time
                 Hero urgentD = MostUrgentDoomedAlly();
                 if (urgentD != null && GetDoomDuration(urgentD) <= 1 &&
                     Act(actor, Ability.FullRemedy, urgentD)) return;
@@ -192,21 +182,19 @@ namespace PlayerCoder
 
             if (!IsTrinityDoomLike() && DispelEnemyAutoLife(actor, Ability.QuickDispel)) return;
 
-            // Trinity Doom: cleanse urgent Doom, Meteor pressure, Doom Cleric and Fighter
+            // Trinity Doom: cleanse urgent Doom, PoisonNova + Meteor pressure
             if (IsTrinityDoomLike())
             {
-                // Help with urgent Doom cleanse before casting
                 Hero urgentD = MostUrgentDoomedAlly();
                 if (urgentD != null && GetDoomDuration(urgentD) <= 1 &&
                     Act(actor, Ability.FullRemedy, urgentD)) return;
-                // PoisonNova for pressure instead of Doom, cheaper and poisons all
                 if (CountUnpoisonedFoes() > 0 &&
                     Act(actor, Ability.PoisonNova, BestMagicTarget()))            return;
                 if (Act(actor, Ability.Meteor, BestMagicTarget()))                return;
                 if (FinishMagicTarget(actor))                                     return;
                 if (Act(actor, Ability.MagicMissile, FindLivingFoe(HeroJobClass.Cleric))) return;
                 if (Act(actor, Ability.MagicMissile, BestMagicTarget()))          return;
-                if (Act(actor, Ability.Attack,        BestAttackTarget()))                return;
+                if (Act(actor, Ability.Attack,        BestAttackTarget()))        return;
                 Wait(actor);
                 return;
             }
@@ -224,7 +212,6 @@ namespace PlayerCoder
                 return;
             }
 
-            // PoisonNova first, poisons all enemies
             if (CountUnpoisonedFoes() > 0 &&
                 Act(actor, Ability.PoisonNova, BestMagicTarget())) return;
 
@@ -286,24 +273,20 @@ namespace PlayerCoder
         {
             if (!IsTrinityDoomLike() && HpRatio(actor) <= HpLight && HealCriticalAlly(actor)) return;
 
-            // Trinity Doom: reactive crafting, 1 FullRemedy always available, MegaElixir for swing
+            // Trinity Doom: cycle 4 FullRemedies then MegaElixir
             if (IsTrinityDoomLike())
             {
-                // Heal self if critical, use MegaElixir since we have no Elixirs
                 if (HpRatio(actor) <= HpCritical)
                 {
-                    if (SelfCast(actor, Ability.MegaElixir))       return;
-                    if (Act(actor, Ability.Elixir, actor))          return;
-                    if (Act(actor, Ability.Potion, actor))          return;
+                    if (SelfCast(actor, Ability.MegaElixir))  return;
+                    if (Act(actor, Ability.Elixir, actor))    return;
+                    if (Act(actor, Ability.Potion, actor))    return;
                 }
-                // Ether Fighter so it can CureSerious and Resurrect
                 Hero ourFighter = FindLivingAlly(HeroJobClass.Fighter);
                 if (ourFighter != null && MpRatio(ourFighter) <= 0.35f &&
                     Act(actor, Ability.Ether, ourFighter)) return;
-                // Cleanse own Doom immediately, Alchemist must stay alive
                 if (HasStatus(actor, StatusEffect.Doom) &&
                     Act(actor, Ability.FullRemedy, actor)) return;
-                // Cycle: 5 FullRemedies then 1 MegaElixir
                 if (trinityDoomCycleStep < 4)
                 {
                     if (Essence() >= EssenceCostTier1 &&
@@ -324,20 +307,16 @@ namespace PlayerCoder
                 }
                 else
                 {
-                    // Use MegaElixir then reset cycle
                     if (SelfCast(actor, Ability.MegaElixir))
                     {
                         trinityDoomCycleStep = 0;
                         return;
                     }
                 }
-                // Cleanse ally with lowest Doom duration
                 Hero urgentDoomed = MostUrgentDoomedAlly();
                 if (urgentDoomed != null &&
                     Act(actor, Ability.FullRemedy, urgentDoomed)) return;
-                // Revive if needed
                 if (ReviveOrCraftRevive(actor)) return;
-                // Ether self if low mana
                 if (UseEther(actor, MpLow)) return;
                 if (Act(actor, Ability.Attack, BestAttackTarget())) return;
                 Wait(actor);
@@ -369,15 +348,6 @@ namespace PlayerCoder
             Wait(actor);
         }
 
-        private static bool CleansePetrifyIfNoRemedy(Hero actor)
-        {
-            Hero petrified = FindAllyWithStatus(StatusEffect.Petrified, StatusEffect.Petrifying);
-            if (petrified == null)                     return false;
-            if (AnyAllyHasItem(Ability.PetrifyRemedy)) return false;
-            if (AnyAllyHasItem(Ability.FullRemedy))    return false;
-            return Act(actor, Ability.Cleanse, petrified);
-        }
-
         private static bool CleanseDoomIfNoRemedy(Hero actor)
         {
             Hero doomed = FindAllyWithStatus(StatusEffect.Doom);
@@ -403,7 +373,6 @@ namespace PlayerCoder
 
         private static bool CraftSupportItems(Hero actor)
         {
-            // Craft MegaElixir first, heals whole team, not just one ally
             if (Essence() >= EssenceCostTier3 &&
                 !AnyAllyHasItem(Ability.MegaElixir) &&
                 SelfCast(actor, Ability.CraftMegaElixir)) return true;
@@ -412,7 +381,7 @@ namespace PlayerCoder
                 !AnyAllyHasItem(Ability.Ether) &&
                 SelfCast(actor, Ability.CraftEther)) return true;
 
-            if (Essence() >= EssenceCostTier2 &&
+            if (Essence() >= 3 &&
                 !AnyAllyHasItem(Ability.Elixir) &&
                 !AnyAllyHasItem(Ability.MegaElixir) &&
                 SelfCast(actor, Ability.CraftElixir)) return true;
@@ -464,7 +433,6 @@ namespace PlayerCoder
             if (petrified != null && Act(actor, Ability.FullRemedy,    petrified)) return true;
 
             Hero doomed = FindAllyWithStatus(StatusEffect.Doom);
-            // Always cleanse Alchemist Doom, it's our crafting engine
             if (doomed != null && doomed.jobClass == HeroJobClass.Alchemist &&
                 Act(actor, Ability.FullRemedy, doomed)) return true;
             if (!IsTrinityDoomLike() && doomed != null && Act(actor, Ability.FullRemedy, doomed)) return true;
@@ -648,7 +616,6 @@ namespace PlayerCoder
         // SITUATION DETECTION
         // ============================================================
 
-        // Fighter + Cleric + Wizard, Wizard Dooms, Cleric sustains
         private static bool IsTrinityDoomLike()
         {
             return CountEnemyClass(HeroJobClass.Wizard)  >= 1 &&
@@ -658,14 +625,12 @@ namespace PlayerCoder
                    CountEnemyClass(HeroJobClass.Rogue)   == 0;
         }
 
-        // 2 Wizards + Rogue + Fighter, heavy Petrify spam
         private static bool IsPetrificationLike()
         {
             return CountEnemyClass(HeroJobClass.Wizard) >= 2 &&
                    CountEnemyClass(HeroJobClass.Rogue)  >= 1;
         }
 
-        // 2 Wizards + Fighter, kill enemy Fighter to stop Resurrections
         private static bool IsMeteorRushLike()
         {
             return CountEnemyClass(HeroJobClass.Wizard)  >= 2 &&
@@ -679,14 +644,6 @@ namespace PlayerCoder
             foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
                 if (foe.jobClass == jobClass) count++;
             return count;
-        }
-
-        private static bool TeamIsStable()
-        {
-            if (CountBelow(HpLow) > 0) return false;
-            foreach (Hero ally in Living(TeamHeroCoder.BattleState.allyHeroes))
-                if (HasAnyStatus(ally, DangerousDebuffs)) return false;
-            return true;
         }
 
         private static bool AnyAllyHasItem(Ability ability)
