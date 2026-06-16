@@ -17,11 +17,10 @@ namespace PlayerCoder
         }
     }
 
-    // Team: Fighter / Rogue / Alchemist
+    // Team: Rogue / Rogue / Alchemist
     // Items: 2 Ether, 42 Essence
     // Strategy:
-    // Fighter stacks Brave, uses Cover and Resurrection to protect and revive allies.
-    // Rogue silences casters, poisons, stuns, and steals items.
+    // Both Rogues silence casters, poison, stun, and steal items for massive resource drain.
     // Alchemist crafts MegaElixirs, Ethers, and remedies to sustain the team.
 
     public static class MyAI
@@ -60,15 +59,13 @@ namespace PlayerCoder
         private static readonly HeroJobClass[] ReviveOrder =
         {
             HeroJobClass.Alchemist,
-            HeroJobClass.Rogue,
-            HeroJobClass.Fighter
+            HeroJobClass.Rogue
         };
 
         private static readonly HeroJobClass[] CleanseOrder =
         {
             HeroJobClass.Rogue,
-            HeroJobClass.Alchemist,
-            HeroJobClass.Fighter
+            HeroJobClass.Alchemist
         };
 
         private static readonly StatusEffect[] DangerousDebuffs =
@@ -90,10 +87,6 @@ namespace PlayerCoder
 
             switch (actor.jobClass)
             {
-                case HeroJobClass.Fighter:
-                    ControlFighter(actor);
-                    return;
-
                 case HeroJobClass.Rogue:
                     ControlRogue(actor);
                     return;
@@ -106,44 +99,6 @@ namespace PlayerCoder
                     Wait(actor);
                     return;
             }
-        }
-
-        // ============================================================
-        // FIGHTER
-        // ============================================================
-
-        private static void ControlFighter(Hero actor)
-        {
-            if (UseEmergencyItem(actor))  return;
-            if (ResurrectDeadAlly(actor)) return;
-            if (ApplyBrave(actor))        return;
-
-            if (FinishPhysicalTarget(actor))                      return;
-
-            Hero target = BestAttackTarget();
-            if (target != null && HpRatio(target) <= 0.60f &&
-                Act(actor, Ability.QuickHit, target))             return;
-
-            if (Act(actor, Ability.Attack, BestAttackTarget()))   return;
-            if (Act(actor, Ability.Attack, FirstLivingFoe()))     return;
-
-            Wait(actor);
-        }
-
-        private static bool ApplyBrave(Hero actor)
-        {
-            if (HasStatus(actor, StatusEffect.Brave)) return false;
-            return Act(actor, Ability.Brave, actor);
-        }
-
-        private static bool ResurrectDeadAlly(Hero actor)
-        {
-            foreach (HeroJobClass jobClass in ReviveOrder)
-            {
-                Hero dead = FindDeadAlly(jobClass);
-                if (dead != null && Act(actor, Ability.Resurrection, dead)) return true;
-            }
-            return false;
         }
 
         // ============================================================
@@ -218,7 +173,7 @@ namespace PlayerCoder
             if (CleansePetrifyIfNoRemedy(actor)) return;
             if (CleanseDoomIfNoRemedy(actor))    return;
 
-            // Petrification: cycle 5 PetrifyRemedies then MegaElixir
+            // Petrification: cycle PetrifyRemedies and MegaElixir
             if (IsPetrificationLike())
             {
                 if (UseEther(actor, 0.10f)) return;
@@ -241,7 +196,7 @@ namespace PlayerCoder
 
             if (DispelEnemyAutoLife(actor, Ability.Dispel)) return;
 
-            if (HasteRogue(actor)) return;
+            if (HasteRogues(actor)) return;
             if (actor.mana >= MinManaToSlow && SlowAllTargets(actor)) return;
 
             if (Act(actor, Ability.Attack, BestAttackTarget())) return;
@@ -249,13 +204,16 @@ namespace PlayerCoder
             Wait(actor);
         }
 
-        private static bool HasteRogue(Hero actor)
+        private static bool HasteRogues(Hero actor)
         {
             if (!TeamIsStable()) return false;
-            Hero rogue = FindLivingAlly(HeroJobClass.Rogue);
-            if (rogue == null)                        return false;
-            if (HasStatus(rogue, StatusEffect.Haste)) return false;
-            return Act(actor, Ability.Haste, rogue);
+            foreach (Hero ally in Living(TeamHeroCoder.BattleState.allyHeroes))
+            {
+                if (ally.jobClass == HeroJobClass.Rogue &&
+                    !HasStatus(ally, StatusEffect.Haste) &&
+                    Act(actor, Ability.Haste, ally)) return true;
+            }
+            return false;
         }
 
         private static bool SlowAllTargets(Hero actor)
