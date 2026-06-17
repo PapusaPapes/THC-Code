@@ -19,29 +19,28 @@ namespace PlayerCoder
 
     // Team: Rogue / Rogue / Alchemist
     // Items: 2 Ether, 42 Essence
-    //
     // Strategy:
-    // - Both Rogues silence casters, poison, stun, and steal items for massive resource drain.
-    // - Alchemist crafts MegaElixirs, Ethers, and remedies to sustain the team.
+    // Both Rogues silence casters, poison, stun, and steal items for massive resource drain.
+    // Alchemist crafts MegaElixirs, Ethers, and remedies to sustain the team.
 
     public static class MyAI
     {
         public static string FolderExchangePath =
             "C:/Users/rmatt/AppData/LocalLow/Ludus Ventus/Team Hero Coder";
 
-        // ---- Health thresholds ----
+        // Health thresholds
         private const float HpCritical = 0.30f;
         private const float HpLow      = 0.55f;
         private const float HpLight    = 0.75f;
 
-        // ---- Mana thresholds ----
+        // Mana thresholds
         private const float MpLow   = 0.25f;
         private const float MpRogue = 0.20f;
 
-        // ---- Combat thresholds ----
+        // Combat thresholds
         private const float FinishHp = 0.35f;
 
-        // ---- Alchemist essence costs ----
+        // Alchemist essence costs
         private const int EssenceCostTier1 = 2;
         private const int EssenceCostTier2 = 3;
         private const int EssenceCostTier3 = 4;
@@ -77,7 +76,7 @@ namespace PlayerCoder
             StatusEffect.Poison
         };
 
-        // Limit Steal attempts per fight — 6 per Rogue = 12 total
+        // Limit Steal attempts per fight, 6 per Rogue = 12 total
         private static int stealAttempts  = 0;
         private const  int MaxStealAttempts = 12;
 
@@ -115,7 +114,7 @@ namespace PlayerCoder
             if (UseEmergencyItem(actor))  return;
             if (UseEther(actor, MpRogue)) return;
 
-            // Steal from item-heavy fights — cap attempts to avoid infinite stealing
+            // Steal from item-heavy fights, cap attempts to avoid infinite stealing
             if ((IsItemCrafterLike() || IsCtrlAndSustainLike()) && stealAttempts < MaxStealAttempts)
             {
                 Hero stealTarget = FindLivingFoe(HeroJobClass.Alchemist);
