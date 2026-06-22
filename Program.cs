@@ -76,7 +76,7 @@ namespace PlayerCoder
             StatusEffect.Poison
         };
 
-        // Limit Steal attempts per fight, 6 per Rogue = 12 total
+        // Limit Steal attempts per fight 6 per Rogue = 12 total
         private static int stealAttempts  = 0;
         private const  int MaxStealAttempts = 12;
 
@@ -114,7 +114,7 @@ namespace PlayerCoder
             if (UseEmergencyItem(actor))  return;
             if (UseEther(actor, MpRogue)) return;
 
-            // Steal from item-heavy fights, cap attempts to avoid infinite stealing
+            // Steal from item-heavy fights cap attempts to avoid infinite stealing
             if ((IsItemCrafterLike() || IsCtrlAndSustainLike()) && stealAttempts < MaxStealAttempts)
             {
                 Hero stealTarget = FindLivingFoe(HeroJobClass.Alchemist);
