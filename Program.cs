@@ -17,10 +17,10 @@ namespace PlayerCoder
         }
     }
 
-    // Team: Rogue / Rogue / Alchemist
+    // Team: Wizard / Wizard / Alchemist
     // Items: 2 Ether, 42 Essence
     // Strategy:
-    // Both Rogues silence casters, poison, stun, and steal items for massive resource drain.
+    // Both Wizards PoisonNova, Doom, Petrify, and Meteor for massive magic pressure.
     // Alchemist crafts MegaElixirs, Ethers, and remedies to sustain the team.
 
     public static class MyAI
@@ -34,8 +34,7 @@ namespace PlayerCoder
         private const float HpLight    = 0.75f;
 
         // Mana thresholds
-        private const float MpLow   = 0.25f;
-        private const float MpRogue = 0.20f;
+        private const float MpLow = 0.25f;
 
         // Combat thresholds
         private const float FinishHp = 0.35f;
@@ -59,12 +58,12 @@ namespace PlayerCoder
         private static readonly HeroJobClass[] ReviveOrder =
         {
             HeroJobClass.Alchemist,
-            HeroJobClass.Rogue
+            HeroJobClass.Wizard
         };
 
         private static readonly HeroJobClass[] CleanseOrder =
         {
-            HeroJobClass.Rogue,
+            HeroJobClass.Wizard,
             HeroJobClass.Alchemist
         };
 
@@ -75,10 +74,6 @@ namespace PlayerCoder
             StatusEffect.Petrifying,
             StatusEffect.Poison
         };
-
-        // Limit Steal attempts per fight 6 per Rogue = 12 total
-        private static int stealAttempts  = 0;
-        private const  int MaxStealAttempts = 12;
 
         public static void ProcessAI()
         {
@@ -91,8 +86,8 @@ namespace PlayerCoder
 
             switch (actor.jobClass)
             {
-                case HeroJobClass.Rogue:
-                    ControlRogue(actor);
+                case HeroJobClass.Wizard:
+                    ControlWizard(actor);
                     return;
 
                 case HeroJobClass.Alchemist:
@@ -106,44 +101,69 @@ namespace PlayerCoder
         }
 
         // ============================================================
-        // ROGUE
+        // WIZARD
         // ============================================================
 
-        private static void ControlRogue(Hero actor)
+        private static void ControlWizard(Hero actor)
         {
-            if (UseEmergencyItem(actor))  return;
-            if (UseEther(actor, MpRogue)) return;
+            if (UseEmergencyItem(actor)) return;
+            if (UseEther(actor, MpLow))  return;
 
-            // Steal from item-heavy fights cap attempts to avoid infinite stealing
-            if ((IsItemCrafterLike() || IsCtrlAndSustainLike()) && stealAttempts < MaxStealAttempts)
-            {
-                Hero stealTarget = FindLivingFoe(HeroJobClass.Alchemist);
-                if (stealTarget != null)
-                {
-                    stealAttempts++;
-                    if (Act(actor, Ability.Steal, stealTarget)) return;
-                }
-            }
+            if (DispelEnemyAutoLife(actor, Ability.QuickDispel)) return;
 
-            // Silence casters first
-            if (Act(actor, Ability.SilenceStrike, FindUnsilenced(HeroJobClass.Cleric)))    return;
-            if (Act(actor, Ability.SilenceStrike, FindUnsilenced(HeroJobClass.Alchemist))) return;
-            if (Act(actor, Ability.SilenceStrike, FindUnsilenced(HeroJobClass.Wizard)))    return;
+            // PoisonNova first, poisons all enemies
+            if (CountUnpoisonedFoes() > 0 &&
+                Act(actor, Ability.PoisonNova, BestMagicTarget())) return;
 
-            if (FinishPhysicalTarget(actor)) return;
+            if (DoomAllTargets(actor))    return;
+            if (PetrifyThreats(actor))    return;
+            if (SlowAllTargets(actor))    return;
 
-            // Poison high priority targets
-            if (Act(actor, Ability.PoisonStrike, FindUnpoisoned(HeroJobClass.Cleric)))    return;
-            if (Act(actor, Ability.PoisonStrike, FindUnpoisoned(HeroJobClass.Alchemist))) return;
-            if (Act(actor, Ability.PoisonStrike, FindUnpoisoned(HeroJobClass.Wizard)))    return;
-            if (Act(actor, Ability.PoisonStrike, FindUnpoisoned(HeroJobClass.Fighter)))   return;
-            if (Act(actor, Ability.PoisonStrike, FindUnpoisoned(HeroJobClass.Monk)))      return;
-
-            if (Act(actor, Ability.StunStrike, BestAttackTarget())) return;
-            if (Act(actor, Ability.Attack,     BestAttackTarget())) return;
-            if (Act(actor, Ability.Attack,     FirstLivingFoe()))   return;
+            if (FinishMagicTarget(actor))                             return;
+            if (Act(actor, Ability.Meteor,       BestMagicTarget())) return;
+            if (Act(actor, Ability.MagicMissile, BestMagicTarget())) return;
+            if (Act(actor, Ability.Attack,        BestAttackTarget())) return;
+            if (Act(actor, Ability.Attack,        FirstLivingFoe()))   return;
 
             Wait(actor);
+        }
+
+        private static bool DoomAllTargets(Hero actor)
+        {
+            if (Act(actor, Ability.Doom, FindUndoomed(HeroJobClass.Cleric)))    return true;
+            if (Act(actor, Ability.Doom, FindUndoomed(HeroJobClass.Alchemist))) return true;
+            if (Act(actor, Ability.Doom, FindUndoomed(HeroJobClass.Fighter)))   return true;
+            if (Act(actor, Ability.Doom, FindUndoomed(HeroJobClass.Monk)))      return true;
+            if (Act(actor, Ability.Doom, FindUndoomed(HeroJobClass.Rogue)))     return true;
+            if (Act(actor, Ability.Doom, FindUndoomed(HeroJobClass.Wizard)))    return true;
+            return false;
+        }
+
+        private static bool PetrifyThreats(Hero actor)
+        {
+            if (Act(actor, Ability.Petrify, FindUnpetrified(HeroJobClass.Monk)))    return true;
+            if (Act(actor, Ability.Petrify, FindUnpetrified(HeroJobClass.Fighter))) return true;
+            if (Act(actor, Ability.Petrify, FindUnpetrified(HeroJobClass.Rogue)))   return true;
+            return false;
+        }
+
+        private static bool SlowAllTargets(Hero actor)
+        {
+            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Cleric)))    return true;
+            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Alchemist))) return true;
+            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Monk)))      return true;
+            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Fighter)))   return true;
+            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Wizard)))    return true;
+            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Rogue)))     return true;
+            return false;
+        }
+
+        private static bool FinishMagicTarget(Hero actor)
+        {
+            Hero target = BestMagicTarget();
+            return target != null &&
+                   HpRatio(target) <= FinishHp &&
+                   Act(actor, Ability.MagicMissile, target);
         }
 
         // ============================================================
@@ -183,35 +203,11 @@ namespace PlayerCoder
 
             if (DispelEnemyAutoLife(actor, Ability.Dispel)) return;
 
-            if (HasteRogues(actor)) return;
             if (actor.mana >= MinManaToSlow && SlowAllTargets(actor)) return;
 
             if (Act(actor, Ability.Attack, BestAttackTarget())) return;
 
             Wait(actor);
-        }
-
-        private static bool HasteRogues(Hero actor)
-        {
-            if (!TeamIsStable()) return false;
-            foreach (Hero ally in Living(TeamHeroCoder.BattleState.allyHeroes))
-            {
-                if (ally.jobClass == HeroJobClass.Rogue &&
-                    !HasStatus(ally, StatusEffect.Haste) &&
-                    Act(actor, Ability.Haste, ally)) return true;
-            }
-            return false;
-        }
-
-        private static bool SlowAllTargets(Hero actor)
-        {
-            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Cleric)))    return true;
-            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Alchemist))) return true;
-            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Monk)))      return true;
-            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Fighter)))   return true;
-            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Wizard)))    return true;
-            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Rogue)))     return true;
-            return false;
         }
 
         private static bool CleansePetrifyIfNoRemedy(Hero actor)
@@ -252,8 +248,7 @@ namespace PlayerCoder
 
         private static bool CraftSupportItems(Hero actor)
         {
-            if (CountBelow(HpLow) >= 2 &&
-                Essence() >= EssenceCostTier3 &&
+            if (Essence() >= EssenceCostTier3 &&
                 !AnyAllyHasItem(Ability.MegaElixir) &&
                 SelfCast(actor, Ability.CraftMegaElixir)) return true;
 
@@ -347,8 +342,6 @@ namespace PlayerCoder
 
             foreach (Hero ally in Living(TeamHeroCoder.BattleState.allyHeroes))
             {
-                if (ally.jobClass == HeroJobClass.Rogue) continue;
-
                 float mp = MpRatio(ally);
                 if (mp >= lowestMp) continue;
                 lowestMp = mp;
@@ -361,14 +354,6 @@ namespace PlayerCoder
         // ============================================================
         // ATTACK
         // ============================================================
-
-        private static bool FinishPhysicalTarget(Hero actor)
-        {
-            Hero target = BestAttackTarget();
-            return target != null &&
-                   HpRatio(target) <= FinishHp &&
-                   Act(actor, Ability.Attack, target);
-        }
 
         private static bool DispelEnemyAutoLife(Hero actor, Ability dispelAbility)
         {
@@ -392,18 +377,27 @@ namespace PlayerCoder
             return null;
         }
 
+        private static Hero BestMagicTarget()
+        {
+            foreach (HeroJobClass jobClass in KillOrder)
+                foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
+                    if (foe.jobClass == jobClass && Legal(Ability.MagicMissile, foe)) return foe;
+
+            return FirstLivingFoe();
+        }
+
         // ============================================================
         // TARGET FINDERS
         // ============================================================
 
-        private static Hero FindUnsilenced(HeroJobClass jobClass)
+        private static Hero FindUndoomed(HeroJobClass jobClass)
         {
-            return FindFoeWithout(jobClass, StatusEffect.Silence, Ability.SilenceStrike, ignoreCover: false);
+            return FindFoeWithout(jobClass, StatusEffect.Doom, Ability.Doom, ignoreCover: false);
         }
 
-        private static Hero FindUnpoisoned(HeroJobClass jobClass)
+        private static Hero FindUnpetrified(HeroJobClass jobClass)
         {
-            return FindFoeWithout(jobClass, StatusEffect.Poison, Ability.PoisonStrike, ignoreCover: false);
+            return FindFoeWithout(jobClass, StatusEffect.Petrified, Ability.Petrify, ignoreCover: false);
         }
 
         private static Hero FindUnslowed(HeroJobClass jobClass)
@@ -481,29 +475,9 @@ namespace PlayerCoder
             return null;
         }
 
-        private static Hero FindLivingFoe(HeroJobClass jobClass)
-        {
-            foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
-                if (foe.jobClass == jobClass) return foe;
-            return null;
-        }
-
         // ============================================================
         // SITUATION DETECTION
         // ============================================================
-
-        private static bool IsItemCrafterLike()
-        {
-            return CountEnemyClass(HeroJobClass.Rogue)   >= 1 &&
-                   CountEnemyClass(HeroJobClass.Monk)    == 0 &&
-                   CountEnemyClass(HeroJobClass.Fighter) == 0 &&
-                   CountEnemyClass(HeroJobClass.Wizard)  == 0;
-        }
-
-        private static bool IsCtrlAndSustainLike()
-        {
-            return CountEnemyClass(HeroJobClass.Alchemist) >= 2;
-        }
 
         private static bool IsPetrificationLike()
         {
@@ -531,6 +505,14 @@ namespace PlayerCoder
             int count = 0;
             foreach (Hero ally in Living(TeamHeroCoder.BattleState.allyHeroes))
                 if (HpRatio(ally) <= hpThreshold) count++;
+            return count;
+        }
+
+        private static int CountUnpoisonedFoes()
+        {
+            int count = 0;
+            foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
+                if (!HasStatus(foe, StatusEffect.Poison)) count++;
             return count;
         }
 
