@@ -111,6 +111,34 @@ namespace PlayerCoder
 
             if (DispelEnemyAutoLife(actor, Ability.QuickDispel)) return;
 
+            // Lmt Brk Crafter: pure Doom to kill through Revives, no PoisonNova waste
+            if (IsLmtBrkCrafterLike())
+            {
+                if (Act(actor, Ability.Doom, FindUndoomed(HeroJobClass.Alchemist))) return;
+                if (Act(actor, Ability.Doom, FindUndoomed(HeroJobClass.Monk)))      return;
+                if (Act(actor, Ability.Meteor, BestMagicTarget()))                  return;
+                if (FinishMagicTarget(actor))                                       return;
+                if (Act(actor, Ability.MagicMissile, BestMagicTarget()))            return;
+                if (Act(actor, Ability.Attack,        BestAttackTarget()))          return;
+                Wait(actor);
+                return;
+            }
+
+            // Item Crafter: Meteor the Alchemist down fast, cleanse Doom
+            if (IsItemCrafterLike())
+            {
+                if (Act(actor, Ability.FullRemedy, FindAllyWithStatus(StatusEffect.Doom))) return;
+                if (Act(actor, Ability.Doom,   FindUndoomed(HeroJobClass.Alchemist)))     return;
+                if (Act(actor, Ability.Doom,   FindUndoomed(HeroJobClass.Rogue)))         return;
+                if (Act(actor, Ability.Meteor, FindLivingFoe(HeroJobClass.Alchemist)))    return;
+                if (FinishMagicTarget(actor))                                             return;
+                if (Act(actor, Ability.MagicMissile, FindLivingFoe(HeroJobClass.Alchemist))) return;
+                if (Act(actor, Ability.MagicMissile, BestMagicTarget()))                  return;
+                if (Act(actor, Ability.Attack,        BestAttackTarget()))                return;
+                Wait(actor);
+                return;
+            }
+
             // PoisonNova first, poisons all enemies
             if (CountUnpoisonedFoes() > 0 &&
                 Act(actor, Ability.PoisonNova, BestMagicTarget())) return;
@@ -172,6 +200,10 @@ namespace PlayerCoder
 
         private static void ControlAlchemist(Hero actor)
         {
+            // Heal team immediately if anyone is critical
+            if (CountBelow(HpCritical) > 0 && SelfCast(actor, Ability.MegaElixir)) return;
+            if (HpRatio(actor) <= HpLow && SelfCast(actor, Ability.MegaElixir)) return;
+
             if (HpRatio(actor) <= HpLight && HealCriticalAlly(actor)) return;
 
             if (UseEmergencyItem(actor)) return;
@@ -180,17 +212,12 @@ namespace PlayerCoder
             if (CleansePetrifyIfNoRemedy(actor)) return;
             if (CleanseDoomIfNoRemedy(actor))    return;
 
-            // Petrification: cycle PetrifyRemedies and MegaElixir
+            // Petrification: spam PetrifyRemedies above all else
             if (IsPetrificationLike())
             {
-                if (UseEther(actor, 0.10f)) return;
                 if (Essence() >= EssenceCostTier1 &&
-                    !AnyAllyHasItem(Ability.PetrifyRemedy) &&
                     SelfCast(actor, Ability.CraftPetrifyRemedy)) return;
-                if (Essence() >= EssenceCostTier3 &&
-                    !AnyAllyHasItem(Ability.MegaElixir) &&
-                    SelfCast(actor, Ability.CraftMegaElixir)) return;
-                if (SelfCast(actor, Ability.MegaElixir)) return;
+                if (UseEther(actor, 0.10f)) return;
                 if (ReviveOrCraftRevive(actor)) return;
                 if (Act(actor, Ability.Attack, BestAttackTarget())) return;
                 Wait(actor);
@@ -202,8 +229,6 @@ namespace PlayerCoder
             if (CraftSupportItems(actor))   return;
 
             if (DispelEnemyAutoLife(actor, Ability.Dispel)) return;
-
-            if (actor.mana >= MinManaToSlow && SlowAllTargets(actor)) return;
 
             if (Act(actor, Ability.Attack, BestAttackTarget())) return;
 
@@ -248,6 +273,7 @@ namespace PlayerCoder
 
         private static bool CraftSupportItems(Hero actor)
         {
+            // Always keep a MegaElixir stocked, Wizards have no protection
             if (Essence() >= EssenceCostTier3 &&
                 !AnyAllyHasItem(Ability.MegaElixir) &&
                 SelfCast(actor, Ability.CraftMegaElixir)) return true;
@@ -320,6 +346,11 @@ namespace PlayerCoder
                 SelfCast(actor, Ability.MegaElixir)) return true;
 
             if (CountBelow(HpLow) >= 2 &&
+                SelfCast(actor, Ability.MegaElixir)) return true;
+
+            // Also fire MegaElixir if any wizard is critically low
+            Hero wizard = FindLivingAlly(HeroJobClass.Wizard);
+            if (wizard != null && HpRatio(wizard) <= HpCritical &&
                 SelfCast(actor, Ability.MegaElixir)) return true;
 
             Hero dead = BestDeadAlly();
@@ -425,8 +456,14 @@ namespace PlayerCoder
             return null;
         }
 
-        private static Hero FindAllyWithStatus(params StatusEffect[] statuses)
+        private static Hero FindLivingFoe(HeroJobClass jobClass)
         {
+            foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
+                if (foe.jobClass == jobClass) return foe;
+            return null;
+        }
+
+        private static Hero FindAllyWithStatus(params StatusEffect[] statuses)        {
             foreach (HeroJobClass jobClass in CleanseOrder)
             {
                 Hero ally = FindLivingAlly(jobClass);
@@ -478,6 +515,22 @@ namespace PlayerCoder
         // ============================================================
         // SITUATION DETECTION
         // ============================================================
+
+        private static bool IsLmtBrkCrafterLike()
+        {
+            return CountEnemyClass(HeroJobClass.Monk)      >= 2 &&
+                   CountEnemyClass(HeroJobClass.Alchemist) >= 1 &&
+                   CountEnemyClass(HeroJobClass.Wizard)    == 0 &&
+                   CountEnemyClass(HeroJobClass.Rogue)     == 0;
+        }
+
+        private static bool IsItemCrafterLike()
+        {
+            return CountEnemyClass(HeroJobClass.Rogue)   >= 1 &&
+                   CountEnemyClass(HeroJobClass.Monk)    == 0 &&
+                   CountEnemyClass(HeroJobClass.Fighter) == 0 &&
+                   CountEnemyClass(HeroJobClass.Wizard)  == 0;
+        }
 
         private static bool IsPetrificationLike()
         {
