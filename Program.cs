@@ -17,12 +17,11 @@ namespace PlayerCoder
         }
     }
 
-    // Team: Fighter / Alchemist / Cleric
+    // Team: Fighter / Fighter / Alchemist
     // Items: 2 Ether, 42 Essence
     // Strategy:
-    // Fighter stacks Brave, tanks, and uses Resurrection to revive fallen allies.
-    // Cleric heals the team and cleanses debuffs directly.
-    // Alchemist crafts MegaElixirs, Ethers, and remedies for extra sustain.
+    // Both Fighters stack Brave, use QuickHit to finish targets, and Resurrect each other.
+    // Alchemist crafts MegaElixirs, Ethers, and remedies to sustain the team.
 
     public static class MyAI
     {
@@ -44,6 +43,7 @@ namespace PlayerCoder
         private const int EssenceCostTier1 = 2;
         private const int EssenceCostTier2 = 3;
         private const int EssenceCostTier3 = 4;
+        private const int MinManaToSlow    = 15;
 
         private static readonly HeroJobClass[] KillOrder =
         {
@@ -57,16 +57,26 @@ namespace PlayerCoder
 
         private static readonly HeroJobClass[] ReviveOrder =
         {
-            HeroJobClass.Cleric,
             HeroJobClass.Alchemist,
             HeroJobClass.Fighter
         };
 
         private static readonly HeroJobClass[] CleanseOrder =
         {
-            HeroJobClass.Cleric,
-            HeroJobClass.Alchemist,
-            HeroJobClass.Fighter
+            HeroJobClass.Fighter,
+            HeroJobClass.Alchemist
+        };
+
+        // Cycle: 4 FullRemedies then 1 MegaElixir in Trinity Doom
+        private static int  trinityDoomCycleStep = 0;
+        private static bool trinityDoomActive     = false;
+
+        private static readonly StatusEffect[] DangerousDebuffs =
+        {
+            StatusEffect.Doom,
+            StatusEffect.Petrified,
+            StatusEffect.Petrifying,
+            StatusEffect.Poison
         };
 
         public static void ProcessAI()
@@ -82,10 +92,6 @@ namespace PlayerCoder
             {
                 case HeroJobClass.Fighter:
                     ControlFighter(actor);
-                    return;
-
-                case HeroJobClass.Cleric:
-                    ControlCleric(actor);
                     return;
 
                 case HeroJobClass.Alchemist:
@@ -106,6 +112,42 @@ namespace PlayerCoder
         {
             if (UseEmergencyItem(actor))  return;
             if (ResurrectDeadAlly(actor)) return;
+
+            if (IsTrinityDoomLike())
+            {
+                if (ResurrectDeadAlly(actor)) return;
+                Hero alch = FindLivingAlly(HeroJobClass.Alchemist);
+                if (alch != null && HpRatio(alch) <= HpLow &&
+                    Act(actor, Ability.CureSerious, alch)) return;
+                if (alch != null && MpRatio(alch) <= 0.20f &&
+                    Act(actor, Ability.Ether, alch)) return;
+                if (ApplyBrave(actor)) return;
+                // Kill enemy Fighter to remove Cover, then hit Wizard/Cleric
+                Hero enemyFighter = FindLivingFoe(HeroJobClass.Fighter);
+                Hero enemyWiz     = FindLivingFoe(HeroJobClass.Wizard);
+                Hero enemyCleric  = FindLivingFoe(HeroJobClass.Cleric);
+                if (enemyFighter != null && Act(actor, Ability.QuickHit, enemyFighter)) return;
+                if (enemyWiz     != null && Act(actor, Ability.QuickHit, enemyWiz))     return;
+                if (enemyCleric  != null && Act(actor, Ability.QuickHit, enemyCleric))  return;
+                if (Act(actor, Ability.Attack, BestAttackTarget()))                      return;
+                Wait(actor);
+                return;
+            }
+
+            // Lmt Brk Crafter: hammer enemy Alchemist before it crafts more Revives
+            if (IsLmtBrkCrafterLike())
+            {
+                if (ResurrectDeadAlly(actor)) return;
+                if (ApplyBrave(actor)) return;
+                Hero enemyAlch = FindLivingFoe(HeroJobClass.Alchemist);
+                if (FinishPhysicalTarget(actor))                                        return;
+                if (enemyAlch != null && Act(actor, Ability.QuickHit, enemyAlch))      return;
+                if (enemyAlch != null && Act(actor, Ability.Attack,   enemyAlch))      return;
+                if (Act(actor, Ability.Attack, BestAttackTarget()))                     return;
+                Wait(actor);
+                return;
+            }
+
             if (ApplyBrave(actor))        return;
 
             if (FinishPhysicalTarget(actor))                      return;
@@ -137,64 +179,6 @@ namespace PlayerCoder
         }
 
         // ============================================================
-        // CLERIC
-        // ============================================================
-
-        private static void ControlCleric(Hero actor)
-        {
-            if (UseEmergencyItem(actor)) return;
-            if (UseEther(actor, MpLow))  return;
-
-            if (ReviveDeadAlly(actor))       return;
-            if (CleanseDangerousDebuff(actor)) return;
-            if (HealWoundedAlly(actor))       return;
-            if (DispelEnemyAutoLife(actor, Ability.Dispel)) return;
-
-            if (Act(actor, Ability.Attack, BestAttackTarget())) return;
-            if (Act(actor, Ability.Attack, FirstLivingFoe()))   return;
-
-            Wait(actor);
-        }
-
-        private static bool ReviveDeadAlly(Hero actor)
-        {
-            foreach (HeroJobClass jobClass in ReviveOrder)
-            {
-                Hero dead = FindDeadAlly(jobClass);
-                if (dead != null && Act(actor, Ability.Revive, dead)) return true;
-            }
-            return false;
-        }
-
-        private static bool CleanseDangerousDebuff(Hero actor)
-        {
-            Hero doomed = FindAllyWithStatus(StatusEffect.Doom);
-            if (doomed != null && Act(actor, Ability.Cleanse, doomed)) return true;
-
-            Hero petrified = FindAllyWithStatus(StatusEffect.Petrified, StatusEffect.Petrifying);
-            if (petrified != null && Act(actor, Ability.Cleanse, petrified)) return true;
-
-            Hero poisoned = FindAllyWithStatus(StatusEffect.Poison);
-            if (poisoned != null && Act(actor, Ability.Cleanse, poisoned)) return true;
-
-            return false;
-        }
-
-        private static bool HealWoundedAlly(Hero actor)
-        {
-            if (CountBelow(HpCritical) > 0 &&
-                Act(actor, Ability.MegaHeal, LowestAlly())) return true;
-
-            Hero lowest = LowestAlly();
-            if (lowest != null && HpRatio(lowest) <= HpLow)
-            {
-                if (Act(actor, Ability.Heal, lowest)) return true;
-            }
-
-            return false;
-        }
-
-        // ============================================================
         // ALCHEMIST
         // ============================================================
 
@@ -206,6 +190,73 @@ namespace PlayerCoder
             if (UseEther(actor, MpLow))  return;
 
             if (CleansePetrifyIfNoRemedy(actor)) return;
+
+            // Lmt Brk Crafter: Haste Fighters, craft MegaElixir, attack
+            if (IsLmtBrkCrafterLike())
+            {
+                if (HasteFirstFighter(actor)) return;
+                if (Essence() >= EssenceCostTier3 &&
+                    !AnyAllyHasItem(Ability.MegaElixir) &&
+                    SelfCast(actor, Ability.CraftMegaElixir)) return;
+                if (ReviveOrCraftRevive(actor)) return;
+                if (UseEther(actor, MpLow))     return;
+                if (Act(actor, Ability.Attack, BestAttackTarget())) return;
+                Wait(actor);
+                return;
+            }
+
+            // Petrification: just keep crafting PetrifyRemedies
+            if (IsPetrificationLike())
+            {
+                if (Essence() >= EssenceCostTier1 &&
+                    SelfCast(actor, Ability.CraftPetrifyRemedy)) return;
+                Hero petrified = FindAllyWithStatus(StatusEffect.Petrified, StatusEffect.Petrifying);
+                if (petrified != null && Act(actor, Ability.PetrifyRemedy, petrified)) return;
+                if (UseEther(actor, MpLow)) return;
+                if (ReviveOrCraftRevive(actor)) return;
+                if (Act(actor, Ability.Attack, BestAttackTarget())) return;
+                Wait(actor);
+                return;
+            }
+
+            // Trinity Doom: cycle 4 Revives then MegaElixir
+            if (IsTrinityDoomLike())
+            {
+                if (HpRatio(actor) <= HpCritical &&
+                    SelfCast(actor, Ability.MegaElixir)) return;
+                if (UseEther(actor, 0.15f)) return;
+                if (trinityDoomCycleStep < 4)
+                {
+                    if (Essence() >= EssenceCostTier1 &&
+                        SelfCast(actor, Ability.CraftRevive))
+                    { trinityDoomCycleStep++; return; }
+                }
+                else if (trinityDoomCycleStep == 4)
+                {
+                    if (Essence() >= EssenceCostTier3 &&
+                        SelfCast(actor, Ability.CraftMegaElixir))
+                    { trinityDoomCycleStep++; return; }
+                }
+                else
+                {
+                    if (SelfCast(actor, Ability.MegaElixir))
+                    { trinityDoomCycleStep = 0; return; }
+                    // MegaElixir not yet craftable, use existing one if available
+                    if (AnyAllyHasItem(Ability.MegaElixir) &&
+                        SelfCast(actor, Ability.MegaElixir))
+                    { trinityDoomCycleStep = 0; return; }
+                    // Reset and start over if stuck
+                    trinityDoomCycleStep = 0;
+                }
+                // Use Revives reactively when dead ally needs it
+                Hero dead = BestDeadAlly();
+                if (dead != null && Act(actor, Ability.Revive, dead)) return;
+                if (UseEther(actor, MpLow)) return;
+                if (Act(actor, Ability.Attack, BestAttackTarget())) return;
+                Wait(actor);
+                return;
+            }
+
             if (CleanseDoomIfNoRemedy(actor))    return;
 
             if (CraftNeededRemedy(actor))   return;
@@ -214,9 +265,35 @@ namespace PlayerCoder
 
             if (DispelEnemyAutoLife(actor, Ability.Dispel)) return;
 
+            if (HasteFirstFighter(actor)) return;
+            if (actor.mana >= MinManaToSlow && SlowAllTargets(actor)) return;
+
             if (Act(actor, Ability.Attack, BestAttackTarget())) return;
 
             Wait(actor);
+        }
+
+        private static bool HasteFirstFighter(Hero actor)
+        {
+            if (!TeamIsStable()) return false;
+            foreach (Hero ally in Living(TeamHeroCoder.BattleState.allyHeroes))
+            {
+                if (ally.jobClass == HeroJobClass.Fighter &&
+                    !HasStatus(ally, StatusEffect.Haste) &&
+                    Act(actor, Ability.Haste, ally)) return true;
+            }
+            return false;
+        }
+
+        private static bool SlowAllTargets(Hero actor)
+        {
+            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Cleric)))    return true;
+            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Alchemist))) return true;
+            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Monk)))      return true;
+            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Fighter)))   return true;
+            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Wizard)))    return true;
+            if (Act(actor, Ability.Slow, FindUnslowed(HeroJobClass.Rogue)))     return true;
+            return false;
         }
 
         private static bool CleansePetrifyIfNoRemedy(Hero actor)
@@ -398,6 +475,31 @@ namespace PlayerCoder
         // TARGET FINDERS
         // ============================================================
 
+        private static Hero FindUnslowed(HeroJobClass jobClass)
+        {
+            return FindFoeWithout(jobClass, StatusEffect.Slow, Ability.Slow, ignoreCover: false);
+        }
+
+        private static Hero FindFoeWithout(
+            HeroJobClass jobClass,
+            StatusEffect status,
+            Ability ability,
+            bool ignoreCover)
+        {
+            foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
+            {
+                if (foe.jobClass != jobClass) continue;
+                if (HasStatus(foe, status))   continue;
+
+                bool canTarget = ignoreCover
+                    ? LegalIgnoreCover(ability, foe)
+                    : Legal(ability, foe);
+
+                if (canTarget) return foe;
+            }
+            return null;
+        }
+
         private static Hero FindAllyWithStatus(params StatusEffect[] statuses)
         {
             foreach (HeroJobClass jobClass in CleanseOrder)
@@ -448,16 +550,64 @@ namespace PlayerCoder
             return null;
         }
 
-        private static Hero FirstLivingFoe()
+        private static Hero FindLivingFoe(HeroJobClass jobClass)
         {
             foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
-                return foe;
+                if (foe.jobClass == jobClass) return foe;
             return null;
         }
 
         // ============================================================
-        // HELPERS
+        // SITUATION DETECTION
         // ============================================================
+
+        private static bool IsLmtBrkCrafterLike()
+        {
+            return CountEnemyClass(HeroJobClass.Monk)      >= 2 &&
+                   CountEnemyClass(HeroJobClass.Alchemist) >= 1 &&
+                   CountEnemyClass(HeroJobClass.Wizard)    == 0 &&
+                   CountEnemyClass(HeroJobClass.Rogue)     == 0;
+        }
+
+        private static bool IsPetrificationLike()
+        {
+            return CountEnemyClass(HeroJobClass.Wizard) >= 2 &&
+                   CountEnemyClass(HeroJobClass.Rogue)  >= 1;
+        }
+
+        private static bool IsTrinityDoomLike()
+        {
+            // Set flag when we first detect Trinity Doom
+            if (CountEnemyClass(HeroJobClass.Wizard)  >= 1 &&
+                CountEnemyClass(HeroJobClass.Cleric)  >= 1 &&
+                CountEnemyClass(HeroJobClass.Fighter) >= 1 &&
+                CountEnemyClass(HeroJobClass.Monk)    == 0 &&
+                CountEnemyClass(HeroJobClass.Rogue)   == 0)
+            {
+                trinityDoomActive = true;
+                return true;
+            }
+            // Keep strategy active after Wizard dies as long as Cleric or Fighter remain
+            return trinityDoomActive &&
+                   (CountEnemyClass(HeroJobClass.Cleric) >= 1 ||
+                    CountEnemyClass(HeroJobClass.Fighter) >= 1);
+        }
+
+        private static int CountEnemyClass(HeroJobClass jobClass)
+        {
+            int count = 0;
+            foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
+                if (foe.jobClass == jobClass) count++;
+            return count;
+        }
+
+        private static bool TeamIsStable()
+        {
+            if (CountBelow(HpLow) > 0) return false;
+            foreach (Hero ally in Living(TeamHeroCoder.BattleState.allyHeroes))
+                if (HasAnyStatus(ally, DangerousDebuffs)) return false;
+            return true;
+        }
 
         private static bool AnyAllyHasItem(Ability ability)
         {
@@ -478,6 +628,10 @@ namespace PlayerCoder
         {
             return TeamHeroCoder.BattleState.allyEssenceCount;
         }
+
+        // ============================================================
+        // CORE HELPERS
+        // ============================================================
 
         private static bool Act(Hero actor, Ability ability, Hero target)
         {
@@ -507,6 +661,13 @@ namespace PlayerCoder
         {
             return target != null &&
                    Utility.AreAbilityAndTargetLegal(ability, target, true);
+        }
+
+        private static Hero FirstLivingFoe()
+        {
+            foreach (Hero foe in Living(TeamHeroCoder.BattleState.foeHeroes))
+                return foe;
+            return null;
         }
 
         private static void Wait(Hero actor)
