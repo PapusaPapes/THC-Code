@@ -219,7 +219,7 @@ namespace PlayerCoder
                 return;
             }
 
-            // Trinity Doom: cycle 4 Revives then MegaElixir
+            // Trinity Doom: cycle 7 Revives then MegaElixir
             if (IsTrinityDoomLike())
             {
                 if (HpRatio(actor) <= HpCritical &&
@@ -240,10 +240,6 @@ namespace PlayerCoder
                 else
                 {
                     if (SelfCast(actor, Ability.MegaElixir))
-                    { trinityDoomCycleStep = 0; return; }
-                    // MegaElixir not yet craftable, use existing one if available
-                    if (AnyAllyHasItem(Ability.MegaElixir) &&
-                        SelfCast(actor, Ability.MegaElixir))
                     { trinityDoomCycleStep = 0; return; }
                     // Reset and start over if stuck
                     trinityDoomCycleStep = 0;
